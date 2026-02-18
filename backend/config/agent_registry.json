@@ -1,0 +1,108 @@
+{
+  "agents": {
+    "BrowserAgent": {
+      "description": "Web automation and browser interactions for navigating pages, filling forms, and extracting data",
+      "capabilities": [
+          "search - Search queries (DuckDuckGo, Google, Bing)",
+          "navigate - Navigate to URLs",
+          "go_back - Go back in browser history",
+          "wait - Wait for specified seconds",
+          "click - Click elements by their index",
+          "input - Input text into form fields",
+          "upload_file - Upload files to file inputs",
+          "scroll - Scroll the page up/down",
+          "find_text - Scroll to specific text on page",
+          "send_keys - Send special keys (Enter, Escape, etc.)",
+          "evaluate - Execute custom JavaScript code on the page (for advanced interactions, shadow DOM, custom selectors, data extraction)",
+          "switch - Switch between browser tabs",
+          "close - Close browser tabs",
+          "extract - Extract data from webpages using LLM",
+          "screenshot - Request a screenshot in your next browser state for visual confirmation",
+          "dropdown_options - Get dropdown option values",
+          "select_dropdown - Select dropdown options",
+          "done - Complete the task (always available)"
+        ],
+      "skill_path": "backend/skills/browser-automation/SKILL.md",
+      "implemented": true
+    },
+    "TerminalAgent": {
+      "description": "Command-line execution and system operations using PowerShell or CMD",
+      "capabilities": [
+        "Execute PowerShell/CMD commands",
+        "Generate Directory Trees",
+        "Run scripts and build tools",
+        "Install packages and dependencies",
+        "Git operations (clone, commit, push)",
+        "File operations via CLI",
+        "Process management"
+      ],
+      "skill_path": "backend/skills/terminal-execution/SKILL.md",
+      "implemented": true
+    },
+    "FileSystemAgent": {
+      "description": "File and directory operations for reading, writing, and managing files",
+      "capabilities": [
+        "List files and directories",
+        "Read file contents",
+        "Write/create new files",
+        "Move/rename files",
+        "Delete files",
+        "Directory exploration and management"
+      ],
+      "skill_path": "backend/skills/filesystem-management/SKILL.md",
+      "implemented": true
+    },
+    "RAGAgent": {
+      "description": "Knowledge retrieval from indexed documents using vector search with source citations",
+      "capabilities": [
+        "Search indexed documents",
+        "Provide answers with source citations",
+        "Query vector store",
+        "Retrieve information from knowledge base",
+        "Answer questions from documentation"
+      ],
+      "skill_path": "backend/skills/knowledge-retrieval/SKILL.md",
+      "implemented": true
+    },
+    "ResearchAgent": {
+      "description": "Web search and information gathering from the internet",
+      "capabilities": [
+        "Perform web searches",
+        "Gather information from multiple sources",
+        "Answer questions with web research",
+        "Summarize findings",
+        "Find latest information on topics",
+        "Fact-checking"
+      ],
+      "skill_path": null,
+      "implemented": true
+    },
+    "ScrapingAgent": {
+      "description": "Fast data extraction from web pages without browser interaction using crawl4ai",
+      "capabilities": [
+        "Fast data extraction from web pages",
+        "Scrape pricing tables",
+        "Extract structured content",
+        "Convert HTML to Markdown",
+        "Extract product catalogs",
+        "Get documentation content"
+      ],
+      "skill_path": "backend/skills/web-scraping/SKILL.md",
+      "implemented": false
+    },
+    "IntegratorAgent": {
+      "description": "Integration with external services like Gmail, Google Drive, and Calendar via MCP",
+      "capabilities": [
+        "Gmail operations (send, read, search emails)",
+        "Google Drive operations (upload, download, list files)",
+        "Google Calendar operations (create, list, update events)",
+        "Slack integration (future)",
+        "Send emails with attachments",
+        "Manage calendar events"
+      ],
+      "skill_path": "backend/skills/mcp-integration/SKILL.md",
+      "implemented": false
+    }
+  }
+}
+
