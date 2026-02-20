@@ -3,7 +3,6 @@ import os
 from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from backend.model_providers.agent_llms import agent_llms
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,6 +11,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.document_loaders import GitRepoLoader
 from langchain_community.docstore.document import Document
 import tempfile
+
+from backend.agents.model_providers.agent_llms import agent_llms
 
 def load_and_chunk_repo(repo_url: str, branch: str = "main", chunk_size: int = 1000, chunk_overlap: int = 100) -> List[Document]:
 	with tempfile.TemporaryDirectory() as temp_dir:

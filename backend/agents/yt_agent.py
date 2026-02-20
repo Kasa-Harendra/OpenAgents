@@ -3,7 +3,7 @@ import os
 from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from backend.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import agent_llms
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter

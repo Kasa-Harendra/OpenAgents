@@ -14,14 +14,13 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from typing import List, Tuple, Dict, Any
-from backend.model_providers.agent_llms import agent_llms
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 import json
 import os
 
-
+from backend.agents.model_providers.agent_llms import agent_llms
 
 class SubTask(BaseModel):
     """Model for a subtask in the execution plan"""
@@ -101,8 +100,8 @@ IMPORTANT RULES:
         1. Go to https://quotes.toscrape.com/
         2. Use extract action with the query \"first 3 quotes with their authors\"
         3. Save results to quotes.csv using write_file action
-        4. Do a google search for the first quote and find when it was written
-        "
+        4. Do a google search for the first quote and find when it was written"
+- Never ask any agent to store some output in any variables
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON object in this exact format:
@@ -167,20 +166,32 @@ Output:
 Remember: Return ONLY the JSON output, no additional text or explanation."""
 
 
-    def decompose_task(self, user_prompt: str) -> Any:
+    def decompose_task(self, user_prompt: str, history: List[Dict] = []) -> Any:
         """
         Decompose user prompt into sequential subtasks and route to agents.
         
         Args:
             user_prompt: The user's request to decompose
+            history: List of previous conversation messages
             
         Returns:
             List of (agent_name, detailed_subtask_prompt) tuples
         """
+        
+        # Format history for context
+        history_context = ""
+        if history:
+            history_context = "PREVIOUS CONVERSATION HISTORY:\n"
+            for msg in history:
+                role = msg.get('role', 'unknown').upper()
+                content = msg.get('content', '')
+                history_context += f"{role}: {content}\n"
+            history_context += "\n"
+
         # Create the prompt template
         prompt = ChatPromptTemplate.from_messages([
             ("system", self._create_system_prompt()),
-            ("user", "{user_request}")
+            ("user", f"{history_context}CURRENT REQUEST: {{user_request}}")
         ])
         
         # Invoke the chain
@@ -188,7 +199,7 @@ Remember: Return ONLY the JSON output, no additional text or explanation."""
             # Get LLM response
             chain = prompt | self.llm
             response = chain.invoke({"user_request": user_prompt})
-            # print(response.content)
+            print(f"DEBUG: Orchestrator raw response: {response.content}")
             
             # Extract content from response
             if hasattr(response, 'content'):

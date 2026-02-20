@@ -13,7 +13,6 @@
           "scroll - Scroll the page up/down",
           "find_text - Scroll to specific text on page",
           "send_keys - Send special keys (Enter, Escape, etc.)",
-          "evaluate - Execute custom JavaScript code on the page (for advanced interactions, shadow DOM, custom selectors, data extraction)",
           "switch - Switch between browser tabs",
           "close - Close browser tabs",
           "extract - Extract data from webpages using LLM",

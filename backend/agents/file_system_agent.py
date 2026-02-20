@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain.tools import tool
 from langchain.agents import create_agent
-from backend.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import agent_llms
 
 # --- Markdown conversion tool imports ---
 import pypandoc
@@ -109,7 +109,7 @@ agent = create_agent(
         "4. Convert markdown: action='convert_markdown_content', markdown_content='## My Notes', output_format='pdf'",
         "",
         "Always use the available file system tools to perform operations as instructed."
-        "Always process your content before you do any file operation. i.e Remove unnecssary context that the user doesn't intend."
+        "Always process your content before you do any file operation. i.e Remove unnecssary context that the user doesn't intend. example: `Previous Agent`, `Previous agent response`"
     ),
     name="FileSystemAgent"
 )

@@ -3,9 +3,8 @@ import os
 import glob
 from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from langchain.tools import tool
 
-from backend.model_providers.agent_llms import agent_llms
+from langchain.tools import tool
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_text_splitters import ExperimentalMarkdownSyntaxTextSplitter
@@ -13,10 +12,10 @@ from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import create_agent
 from langchain_community.docstore.document import Document
-
-
 import pypandoc
 from pdf2docx import Converter
+
+from backend.agents.model_providers.agent_llms import agent_llms
 
 def convert_pdf_to_docx(pdf_path, docx_path):
     cv = Converter(pdf_path)

@@ -1,4 +1,4 @@
-from backend.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import agent_llms
 from langchain_core.prompts import ChatPromptTemplate
 
 class EvaluationAgent:

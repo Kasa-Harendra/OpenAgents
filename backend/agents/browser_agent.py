@@ -8,8 +8,8 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from backend.model_providers.agent_llms import agent_llms, agent_configs
-from backend.model_providers.models import AgentConfig
+from backend.agents.model_providers.agent_llms import agent_llms, agent_configs
+from backend.agents.model_providers.models import AgentConfig
 
 def get_llm(config: AgentConfig):
     model_name = config.model_name
@@ -107,12 +107,11 @@ User Prompt:
         page_extraction_llm=llm,
         use_judge=False,
         flash_mode=False,
-        # override_system_message=browser_system_prompt,
         extend_system_message=browser_system_prompt,
         judge_llm=llm,
     )
 
-    history = await agent.run(max_steps=20)
+    history = await agent.run(max_steps=8)
     await agent.close()
 
     if history.is_successful():
@@ -121,8 +120,9 @@ User Prompt:
         return "Failed"
 
 if __name__ == "__main__":
-    history = asyncio.run(run_browser_agent("""
-Go to https://ui.shadcn.com/ and extract the list of available Components.
-    """))
+    # prompt = sys.argv[0]
+    # history = asyncio.run(run_browser_agent(prompt))
+    prompt = "Go to https://ui.shadcn.com/ and click on components tab and extract the list of components."
+    history = asyncio.run(run_browser_agent(prompt))
     print(history)
     sys.exit()

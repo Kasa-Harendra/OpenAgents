@@ -7,7 +7,7 @@ from langchain.tools import tool
 from langchain.agents import create_agent
 import os
 
-from backend.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import agent_llms
 
 model = agent_llms['ResearchAgent']
 
@@ -51,7 +51,8 @@ agent = create_agent(
         "",
         "OUTPUT FORMAT:",
         "Markdown format of analysis across all Tool calls. (NOTE: Include no unnecessary special characters like (â,€,¯) in the final response.)",
-        "Make sure to include sources as well at the end."
+        "Make sure to include sources as well at the end.",
+        "The final response should be long enough of about 1000 tokens",
         "",
         "**Key Findings**:",
         "- Finding 1",

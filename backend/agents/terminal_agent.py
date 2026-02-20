@@ -8,7 +8,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 import subprocess
 
-from backend.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import agent_llms
 
 @tool
 def run_windows_command(commands: list):
