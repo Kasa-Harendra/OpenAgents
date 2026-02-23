@@ -58,7 +58,24 @@ def run_windows_command(commands: list):
         results.append(output)
     return "\n".join(results)
 
-tools = [run_windows_command]
+def read_file(file_name: str): 
+    """
+    Reads the contents of a file and returns it as a string.
+
+    Args:
+        file_name (str): The absolute or relative path to the file to be read.
+
+    Returns:
+        str: The entire contents of the file as a string.
+
+    Raises:
+        FileNotFoundError: If the specified file does not exist.
+        IOError: If an error occurs during file reading.
+    """
+    with open(file_name, 'r') as f:
+        return f.read()
+
+tools = [run_windows_command, read_file]
 
 model = agent_llms['TerminalAgent']
 system_prompt = """You are a Windows Terminal Agent specializing in PowerShell and CMD command execution.
@@ -85,6 +102,7 @@ EXECUTION GUIDELINES:
 5. Explain errors in user-friendly terms
 6. Suggest fixes for common errors
 7. Never include `cmd /c` in your commands.
+8. DO what is instrcuted and NEVER deviate from given task 
 
 OUTPUT FORMAT:
 ```

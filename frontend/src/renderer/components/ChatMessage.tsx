@@ -2,13 +2,45 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../stores/chatStore';
 import { cn } from '../lib/utils';
-import { User, Sparkles, Globe, Folder, Terminal, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { User, Sparkles, Globe, Folder, Terminal, ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface ChatMessageProps {
   message: Message;
 }
+
+const CodeBlock = ({ language, value }: { language: string; value: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-4 rounded-lg overflow-hidden border border-border bg-zinc-950/90 dark:bg-black/40">
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
+        <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
+          {language || 'code'}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Copy code"
+        >
+          {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+        </button>
+      </div>
+      <div className="p-4 overflow-x-auto custom-scrollbar">
+        <pre className="text-xs font-mono text-zinc-100 leading-relaxed">
+          <code>{value}</code>
+        </pre>
+      </div>
+    </div>
+  );
+};
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';
@@ -49,7 +81,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
            {getAgentIcon()}
         </div>
         
-        <div className="flex flex-col max-w-[80%] w-full">
+        <div className="flex flex-col max-w-[90%] w-full">
             <div 
                 className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors"
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -97,7 +129,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
       </div>
       
       <div className={cn(
-        "flex flex-col max-w-[80%]",
+        "flex flex-col max-w-[90%]",
         isUser ? "items-end" : "items-start"
       )}>
         <div className={cn(
@@ -117,8 +149,24 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  pre: ({node, ...props}: any) => <div className="overflow-auto my-2 p-2 bg-muted/50 rounded-md" {...props} />,
-                  code: ({node, ...props}: any) => <code className="bg-muted/50 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                  pre: ({ children }) => <div className="not-prose">{children}</div>,
+                  code: (props: any) => {
+                    const { children, className, node, ...rest } = props;
+                    const match = /language-(\w+)/.exec(className || '');
+                    const isInline = !match && !rest.inline;
+
+                    if (isInline) {
+                      return (
+                        <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono font-medium text-foreground" {...rest}>
+                          {children}
+                        </code>
+                      );
+                    }
+
+                    return (
+                      <CodeBlock language={match ? match[1] : ''} value={String(children).replace(/\n$/, '')} />
+                    );
+                  }
                 }}
               >
                 {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
@@ -134,4 +182,4 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage);

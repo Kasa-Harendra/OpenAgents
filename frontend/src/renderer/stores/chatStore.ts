@@ -5,7 +5,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: any; // Can be string or JSON object for tool outputs
   timestamp: number;
-  type?: 'prompt' | 'tool_output' | 'agent_response' | 'error' | 'complete' | 'status' | 'tasks_decomposed' | 'agent_start';
+  type?: 'prompt' | 'tool_output' | 'agent_response' | 'error' | 'complete' | 'status' | 'tasks_decomposed' | 'agent_start' | 'content_chunk';
   agentName?: string;
 }
 
@@ -27,6 +27,7 @@ interface ChatState {
   removeChat: (id: string) => void;
   setActiveChat: (id: string | null) => void;
   addMessage: (chatId: string, role: 'user' | 'assistant', content: any, type?: Message['type'], agentName?: string) => void;
+  updateLastMessage: (chatId: string, content: any, type?: Message['type'], isAppend?: boolean) => void;
   updateChatTitle: (id: string, title: string) => void;
   connect: () => void;
   disconnect: () => void;
@@ -79,6 +80,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ),
     }));
   },
+
+  updateLastMessage: (chatId, content, type, isAppend) => {
+    set((state) => ({
+      chats: state.chats.map((chat) => {
+        if (chat.id === chatId && chat.messages.length > 0) {
+          const updatedMessages = [...chat.messages];
+          const lastIndex = updatedMessages.length - 1;
+          const lastMessage = updatedMessages[lastIndex];
+          
+          const newContent = isAppend ? (lastMessage.content || '') + content : content;
+          
+          updatedMessages[lastIndex] = {
+            ...lastMessage,
+            content: newContent,
+            type: type || lastMessage.type
+          };
+          
+          return { ...chat, messages: updatedMessages };
+        }
+        return chat;
+      }),
+    }));
+  },
   
   updateChatTitle: (id, title) => {
     set((state) => ({
@@ -114,15 +138,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
 
     newSocket.onmessage = (event) => {
-      const { activeChatId, addMessage } = get();
+      const { activeChatId, addMessage, updateLastMessage } = get();
       if (!activeChatId) return;
 
       try {
         const data = JSON.parse(event.data);
-        // Map backend types to frontend logic if needed, or use directly
-        // 'data' should match 'websocket_message' from backend: { type, agent_name, content, step }
+        const { type, agent_name, content, chunk } = data;
         
-        addMessage(activeChatId, 'assistant', data.content, data.type, data.agent_name);
+        const currentChat = get().chats.find(c => c.id === activeChatId);
+        const lastMsg = currentChat?.messages[currentChat.messages.length - 1];
+
+        if (type === 'content_chunk') {
+          if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.type === 'agent_response' || lastMsg.type === 'content_chunk')) {
+            updateLastMessage(activeChatId, chunk, 'agent_response', true);
+          } else {
+            addMessage(activeChatId, 'assistant', chunk, 'agent_response', agent_name);
+          }
+        } else if (type === 'agent_response') {
+          // If we were already streaming this response, update it with the final content instead of adding a duplicate
+          if (lastMsg && lastMsg.role === 'assistant' && lastMsg.agentName === agent_name && (lastMsg.type === 'agent_response' || lastMsg.type === 'content_chunk')) {
+            updateLastMessage(activeChatId, content, 'agent_response', false);
+          } else {
+            addMessage(activeChatId, 'assistant', content, 'agent_response', agent_name);
+          }
+        } else if (type === 'tool_output') {
+          addMessage(activeChatId, 'assistant', content, 'tool_output', agent_name);
+        } else if (type === 'status') {
+          // Only update if the last message is already a status message, otherwise add a new one
+          if (lastMsg && lastMsg.type === 'status') {
+            updateLastMessage(activeChatId, content, 'status', false);
+          } else {
+            addMessage(activeChatId, 'assistant', content, 'status', agent_name);
+          }
+        } else {
+          addMessage(activeChatId, 'assistant', content, type, agent_name);
+        }
         
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);

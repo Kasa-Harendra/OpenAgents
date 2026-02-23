@@ -120,9 +120,16 @@ User Prompt:
         return "Failed"
 
 if __name__ == "__main__":
-    # prompt = sys.argv[0]
-    # history = asyncio.run(run_browser_agent(prompt))
-    prompt = "Go to https://ui.shadcn.com/ and click on components tab and extract the list of components."
-    history = asyncio.run(run_browser_agent(prompt))
-    print(history)
-    sys.exit()
+    if len(sys.argv) > 1:
+        prompt = sys.argv[1]
+    else:
+        # Default prompt for testing if no arguments provided
+        prompt = "Go to google.com and search for 'OpenAgents'"
+    
+    try:
+        result = asyncio.run(run_browser_agent(prompt))
+        print(result)
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)

@@ -64,30 +64,51 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
 
         while MAX_RETRIES > 0:
             try:
-                events = agent.stream(
+                agent_rec = {"id": str(uuid.uuid1()), "agent_name": agent.name, "response": ""}
+                
+                # Using astream_events to capture tokens and tool outputs
+                async for event in agent.astream_events(
                     {
                         "messages": [
                             ("user", prompt)
                         ]
                     },
-                    stream_mode="values",
-                )
-
-                agent_rec = {"id": str(uuid.uuid1()), "agent_name": agent.name, "response": ""}
-
-                for event in events:
-                    content = event["messages"][-1].content
-                    agent_rec["response"] = content
+                    version="v2",
+                ):
+                    kind = event["event"]
                     
-                    if callback:
-                        await callback(websocket_message(
-                            type="tool_output",
-                            agent_name=agent.name,
-                            content=content
-                        ))
+                    # Token streaming for the final response
+                    if kind == "on_chat_model_stream":
+                        content = event["data"]["chunk"].content
+                        if content:
+                            agent_rec["response"] += content
+                            if callback:
+                                await callback(websocket_message(
+                                    type="content_chunk",
+                                    agent_name=agent.name,
+                                    chunk=content
+                                ))
                     
-                    event["messages"][-1].pretty_print()
-                
+                    # Tool output streaming
+                    elif kind == "on_tool_end":
+                        tool_output = event["data"]["output"]
+                        if callback:
+                            # We send tool output as a whole, but it's "streaming" in the sense that it appears as soon as it's ready
+                            await callback(websocket_message(
+                                type="tool_output",
+                                agent_name=agent.name,
+                                content=str(tool_output)
+                            ))
+                    
+                    # Status updates
+                    elif kind == "on_tool_start":
+                        tool_name = event["name"]
+                        if callback:
+                            await callback(websocket_message(
+                                type="status",
+                                content=f"Agent {agent.name} is running tool: {tool_name}..."
+                            ))
+
                 if(_evaluate_response(prompt, agent_rec["response"])):
                     context.append(agent_rec)
                     if callback:
@@ -106,7 +127,7 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                     await callback(websocket_message(
                         type="error",
                         content=str(e)
-                    ))
+                     ))
                 MAX_RETRIES -= 1
         return False # Failure message
 
@@ -169,15 +190,35 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
 
         elif agent_name in ["BrowserAgent"]:
             print(f"DEBUG: invoking BrowserAgent subprocess")
-            res = subprocess.run([".\\venv\\Scripts\\activate", '&', "python", './agents/browser_agents.py', processed_sub_task])
-            # res = str(res.stdout)
-            print(res)
-            if res != "Failed":
-                context.append({"id": str(uuid.uuid1()), "agent_name": "BrowserAgent", "response": res})
-                if callback:
-                    await callback(websocket_message(type="agent_response", agent_name="BrowserAgent", content=res))
-            else:
-                error_msg = f"BrowserAgent failed to do - {sub_task}"
+            try:
+                # Use the current python executable to ensure we're in the same environment
+                python_exe = sys.executable
+                script_path = os.path.join(os.path.dirname(__file__), 'agents', 'browser_agent.py')
+                
+                process = await asyncio.create_subprocess_exec(
+                    python_exe, script_path, processed_sub_task,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                
+                stdout, stderr = await process.communicate()
+                res = stdout.decode().strip()
+                err = stderr.decode().strip()
+                
+                if process.returncode == 0 and res != "Failed":
+                    print(f"DEBUG: BrowserAgent subprocess output: {res}")
+                    context.append({"id": str(uuid.uuid1()), "agent_name": "BrowserAgent", "response": res})
+                    if callback:
+                        await callback(websocket_message(type="agent_response", agent_name="BrowserAgent", content=res))
+                else:
+                    error_msg = f"BrowserAgent failed: {err if err else res}"
+                    print(f"DEBUG: {error_msg}")
+                    if callback:
+                        await callback(websocket_message(type="error", content=error_msg))
+                    return error_msg
+            except Exception as e:
+                error_msg = f"Error launching BrowserAgent subprocess: {e}"
+                print(f"DEBUG: {error_msg}")
                 if callback:
                     await callback(websocket_message(type="error", content=error_msg))
                 return error_msg

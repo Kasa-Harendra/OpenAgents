@@ -4,23 +4,188 @@ This agent receives instructions and uses all available file system tools as nee
 """
 import sys
 import os
+import shutil
+import pathlib
+from datetime import datetime
+from typing import List, Optional, Union
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from tempfile import TemporaryDirectory
-from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain.tools import tool
 from langchain.agents import create_agent
 from backend.agents.model_providers.agent_llms import agent_llms
 
 # --- Markdown conversion tool imports ---
 import pypandoc
-import os
 
 model = agent_llms['FileSystemAgent']
 
-# working_directory =  TemporaryDirectory() root_dir=str(working_directory.name)
+def format_size(size_bytes: int) -> str:
+    """Format bytes into human-readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024.0
+    return f"{size_bytes:.1f} TB"
 
-toolkit = FileManagementToolkit()
+@tool("list_directory")
+def list_directory_tool(path: str = ".") -> str:
+    """
+    List contents of a directory with size and type info.
+    """
+    try:
+        abs_path = os.path.abspath(path)
+        if not os.path.exists(abs_path):
+            return f"❌ Path does not exist: {path}"
+        if not os.path.isdir(abs_path):
+            return f"❌ Not a directory: {path}"
+
+        items = os.listdir(abs_path)
+        if not items:
+            return f"✅ Directory is empty: {path}"
+
+        dirs = []
+        files = []
+        for item in items:
+            item_path = os.path.join(abs_path, item)
+            try:
+                stats = os.stat(item_path)
+                size = format_size(stats.st_size)
+                mtime = datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                if os.path.isdir(item_path):
+                    dirs.append(f"📁 {item}/")
+                else:
+                    files.append(f"📄 {item} ({size}, {mtime})")
+            except Exception:
+                dirs.append(f"❓ {item} (error reading stats)")
+
+        output = [f"✅ Contents of {path}:", "Directories:"]
+        output.extend([f"  {d}" for d in sorted(dirs)])
+        output.append("Files:")
+        output.extend([f"  {f}" for f in sorted(files)])
+        return "\n".join(output)
+    except Exception as e:
+        return f"❌ Error listing directory: {str(e)}"
+
+@tool("read_file")
+def read_file_tool(path: str, encoding: str = "utf-8") -> str:
+    """
+    Read contents of a text file.
+    """
+    try:
+        abs_path = os.path.abspath(path)
+        if not os.path.exists(abs_path):
+            return f"❌ File not found: {path}"
+        if not os.path.isfile(abs_path):
+            return f"❌ Not a file: {path}"
+
+        size_bytes = os.path.getsize(abs_path)
+        if size_bytes > 10 * 1024 * 1024: # 10MB limit
+            return f"⚠️ File too large ({format_size(size_bytes)}). Use a tool capable of chunked reading."
+
+        with open(abs_path, 'r', encoding=encoding) as f:
+            content = f.read()
+        return content
+    except UnicodeDecodeError:
+        return f"❌ Encoding error: Could not read {path} with {encoding}. Try a different encoding."
+    except Exception as e:
+        return f"❌ Error reading file: {str(e)}"
+
+@tool("write_file")
+def write_file_tool(path: str, content: str, append: bool = False) -> str:
+    """
+    Create or update a file with the given content.
+    """
+    try:
+        abs_path = os.path.abspath(path)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        mode = 'a' if append else 'w'
+        with open(abs_path, mode, encoding='utf-8') as f:
+            f.write(content)
+        return f"✅ Successfully {'appended to' if append else 'written to'} {path}"
+    except Exception as e:
+        return f"❌ Error writing file: {str(e)}"
+
+@tool("move_file")
+def move_file_tool(source: str, destination: str) -> str:
+    """
+    Move or rename a file or directory.
+    """
+    try:
+        shutil.move(source, destination)
+        return f"✅ Successfully moved {source} to {destination}"
+    except Exception as e:
+        return f"❌ Error moving {source}: {str(e)}"
+
+@tool("copy_file_tool")
+def copy_file_tool(source: str, destination: str) -> str:
+    """
+    Copy a file or directory.
+    """
+    try:
+        if os.path.isdir(source):
+            shutil.copytree(source, destination)
+        else:
+            shutil.copy2(source, destination)
+        return f"✅ Successfully copied {source} to {destination}"
+    except Exception as e:
+        return f"❌ Error copying {source}: {str(e)}"
+
+@tool("delete_file")
+def delete_file_tool(path: str) -> str:
+    """
+    Permanently delete a file.
+    """
+    try:
+        if os.path.isdir(path):
+            return f"❌ {path} is a directory. Use delete_directory to remove it."
+        os.remove(path)
+        return f"✅ Successfully deleted {path}"
+    except Exception as e:
+        return f"❌ Error deleting file: {str(e)}"
+
+@tool("create_directory")
+def create_directory_tool(path: str) -> str:
+    """
+    Create a new directory.
+    """
+    try:
+        os.makedirs(path, exist_ok=True)
+        return f"✅ Successfully created directory: {path}"
+    except Exception as e:
+        return f"❌ Error creating directory: {str(e)}"
+
+@tool("delete_directory")
+def delete_directory_tool(path: str, recursive: bool = False) -> str:
+    """
+    Remove a directory.
+    """
+    try:
+        if not os.path.isdir(path):
+            return f"❌ Not a directory: {path}"
+        if recursive:
+            shutil.rmtree(path)
+        else:
+            os.rmdir(path)
+        return f"✅ Successfully deleted directory: {path}"
+    except Exception as e:
+        return f"❌ Error deleting directory: {str(e)}"
+
+@tool("search_files")
+def search_files_tool(pattern: str, path: str = ".") -> str:
+    """
+    Search for files matching a pattern using glob.
+    """
+    try:
+        found = list(pathlib.Path(path).rglob(pattern))
+        if not found:
+            return f"🔍 No files found matching '{pattern}' in {path}"
+        results = [f"✅ Found {len(found)} results:"]
+        for f in found:
+            results.append(f"- {f}")
+        return "\n".join(results)
+    except Exception as e:
+        return f"❌ Error searching files: {str(e)}"
 
 # --- Markdown conversion tool definition ---
 
@@ -52,64 +217,57 @@ def convert_markdown_content_tool(markdown_content: str, output_format: str = "d
     except Exception as e:
         return f"Conversion failed: {str(e)}"
 
-fs_tools = toolkit.get_tools() + [convert_markdown_content_tool]
+fs_tools = [
+    list_directory_tool,
+    read_file_tool,
+    write_file_tool,
+    move_file_tool,
+    copy_file_tool,
+    delete_file_tool,
+    create_directory_tool,
+    delete_directory_tool,
+    search_files_tool,
+    convert_markdown_content_tool
+]
 
 agent = create_agent(
     model,
     fs_tools,
     system_prompt=(
-        "You are a File System Manager handling all file and directory operations safely and efficiently.",
+        "You are a File System Manager responsible for precise file and directory operations.",
+        "",
+        "CRITICAL DIRECTIVE: DO what is instructed and NEVER deviate from the given task. Complete the task efficiently without unnecessary questioning or alternative suggestions unless safety is compromised.",
         "",
         "AVAILABLE OPERATIONS:",
-        "- list: Enumerate directory contents",
-        "- read: Extract file contents (text files)",
-        "- write: Create or update files",
-        "- move: Relocate files/directories",
-        "- copy: Duplicate files/directories",
-        "- delete: Remove files/directories",
-        "- search: Find files by name/pattern",
-        "- convert_markdown_content: Convert markdown content to docx, pdf, txt, or md file",
+        "- list_directory: Enumerate directory contents with sizes and dates",
+        "- read_file: Read text file contents (limit 10MB)",
+        "- write_file: Create or overwrite files (auto-creates parent directories)",
+        "- move_file: Rename or relocate files/directories",
+        "- copy_file_tool: Duplicate files or repositories",
+        "- delete_file: Permanently remove a file",
+        "- create_directory: Initialize a new directory",
+        "- delete_directory: Remove a folder (recursive option available)",
+        "- search_files: Find files using patterns (e.g., *.py)",
+        "- convert_markdown_content: Export markdown to docx, pdf, or txt",
         "",
-        "SAFETY PROTOCOLS:",
-        "1. PATH VALIDATION:",
-        "   - Verify paths exist before operations",
-        "   - Check permissions before access",
-        "   - Use absolute paths or clear relative context",
-        "   - Warn if path doesn't exist",
-        "",
-        "2. SIZE AWARENESS:",
-        "   - Warn before reading files > 10MB",
-        "   - Suggest alternatives for very large files",
-        "   - Show file size in list operations",
-        "",
-        "3. DESTRUCTIVE OPERATIONS:",
-        "   - Note when performing delete operations",
-        "   - Warn if deleting non-empty directories",
-        "",
-        "4. ENCODING HANDLING:",
-        "   - Default to UTF-8 for text files",
-        "   - Detect encoding when possible",
-        "   - Report encoding issues clearly",
-        "",
-        "EXECUTION GUIDELINES:",
-        "- Create parent directories automatically when writing files",
-        "- Provide descriptive success/error messages",
-        "- Return file sizes in human-readable format (KB, MB)",
-        "- List hidden files only if explicitly requested",
+        "EXECUTION STANDARDS:",
+        "1. PATHS: Use absolute paths or reliable relative paths. Validate existence before processing.",
+        "2. SAFETY: Avoid destructive operations unless explicitly requested. Warn about large file reads.",
+        "3. CLEANLINESS: Automate parent directory creation. Default to UTF-8 encoding.",
+        "4. FEEDBACK: Provide clear, structured success/error messages. Include sizes and counts where applicable.",
+        "5. CONTEXT: Always process your content before performing file operations. Remove unnecessary context that the user doesn't intend, such as 'Previous Agent' or 'Previous agent response'.",
         "",
         "ERROR HANDLING:",
-        "- 'File not found' → Suggest similar paths if possible",
-        "- 'Permission denied' → Explain required permissions",
-        "- 'Encoding error' → Specify detected vs required encoding",
+        "- If a file is missing, suggest potential alternatives if found in the same directory.",
+        "- If permission is denied, clearly state it and suggest a different location.",
         "",
         "EXAMPLES:",
-        "1. List desktop: action='list', path='C:\\Users\\User\\Desktop'",
-        "2. Read config: action='read', path='project/config.json'",
-        "3. Write log: action='write', path='logs/app.log', content='Entry'",
-        "4. Convert markdown: action='convert_markdown_content', markdown_content='## My Notes', output_format='pdf'",
+        "1. List files: action='list_directory', path='C:\\Projects\\App'",
+        "2. Create log: action='write_file', path='logs/session.log', content='[INFO] System initialized'",
+        "3. Remove temp: action='delete_file', path='temp/cache.tmp'",
+        "4. Search code: action='search_files', pattern='*.py', path='.'",
         "",
-        "Always use the available file system tools to perform operations as instructed."
-        "Always process your content before you do any file operation. i.e Remove unnecssary context that the user doesn't intend. example: `Previous Agent`, `Previous agent response`"
+        "Always use the provided manual tools. Do not rely on external toolkits or library-specific abstractions."
     ),
     name="FileSystemAgent"
 )

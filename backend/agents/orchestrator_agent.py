@@ -93,7 +93,8 @@ IMPORTANT RULES:
 - Each subtask should be detailed enough for the agent to execute without clarification
 - Subtasks should execute sequentially (output of one can feed into the next)
 - Choose the MOST APPROPRIATE agent for each subtask based on capabilities
-- If a task requires multiple steps, break it into separate subtasks
+- If a task requires multiple steps, break it into separate subtasks.
+- Break every task into subtasks even if the whole belong to single agent.
 - Make subtask descriptions specific and actionable
 - For agents like BrowserAgent, the subtask must be structured as a numbered sequence, with each step using the tool names directly. For example:
         task = "

@@ -28,7 +28,7 @@
       "description": "Command-line execution and system operations using PowerShell or CMD",
       "capabilities": [
         "Execute PowerShell/CMD commands",
-        "Generate Directory Trees",
+        "Generate Directory Trees `tree /f`",
         "Run scripts and build tools",
         "Install packages and dependencies",
         "Git operations (clone, commit, push)",

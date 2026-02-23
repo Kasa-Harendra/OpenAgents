@@ -110,7 +110,7 @@ const ChatWindow: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 scroll-smooth" ref={scrollRef}>
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-6">
           {activeChat?.messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
               <h2 className="text-2xl font-medium">New Conversation</h2>
@@ -157,7 +157,7 @@ const ChatWindow: React.FC = () => {
       </div>
 
       <div className="p-4 border-t border-border bg-card/30 backdrop-blur-sm">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <PromptInput onSend={handleSend} disabled={!isConnected || activeChat?.isTyping} />
           <p className="text-xs text-center text-muted-foreground mt-2">
             AI can make mistakes. Check important info.

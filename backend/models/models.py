@@ -30,9 +30,10 @@ class agent_config_response(agent_config_base):
         from_attributes = True
 
 class websocket_message(BaseModel):
-    type: str # 'prompt', 'tool_start', 'tool_output', 'agent_response', 'error', 'complete', 'status', 'tasks_decomposed', 'agent_start'
+    type: str # 'prompt', 'tool_start', 'tool_output', 'agent_response', 'error', 'complete', 'status', 'tasks_decomposed', 'agent_start', 'content_chunk'
     agent_name: Optional[str] = None
     content: Any = None
+    chunk: Optional[str] = None
     step: Optional[int] = None
 
 class UserRequest(BaseModel):
