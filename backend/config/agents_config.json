@@ -1,0 +1,94 @@
+{
+  "agents": {
+    "Coordinator": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "BrowserAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "FileSystemAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "TerminalAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "ResearchAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "ScrapingAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "RAGAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "EmbeddingModel": {
+      "llm_provider": "ollama",
+      "type":"embed",
+      "llm_config": {
+        "api_key": null,
+        "model": "embeddinggemma:latest",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "GuardianAgent": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    },
+    "Finalizer": {
+      "llm_provider": "ollama",
+      "type":"chat",
+      "llm_config": {
+        "api_key": null,
+        "model": "gpt-oss:20b",
+        "base_url": "http://localhost:11434"
+      }
+    }
+  }
+}

@@ -1,0 +1,208 @@
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Message } from '../stores/chatStore';
+import { cn } from '@/lib/utils';
+import { User, Sparkles, Globe, Folder, Terminal, ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+interface ChatMessageProps {
+  message: Message;
+}
+
+const CodeBlock = ({ language, value }: { language: string; value: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-4 rounded-lg overflow-hidden border border-border bg-zinc-950/90 dark:bg-black/40">
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
+        <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
+          {language || 'code'}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Copy code"
+        >
+          {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+        </button>
+      </div>
+      <div className="overflow-hidden">
+        <SyntaxHighlighter
+          language={language || 'text'}
+          style={vscDarkPlus}
+          customStyle={{
+            margin: 0,
+            padding: '1rem',
+            fontSize: '0.75rem',
+            lineHeight: '1.5',
+            background: 'transparent',
+          }}
+          codeTagProps={{
+            className: 'font-mono'
+          }}
+        >
+          {value}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  );
+};
+
+const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
+  const isUser = message.role === 'user';
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Determine icon and color based on agentName or message type
+  const getAgentIcon = () => {
+    switch (message.agentName) {
+      case 'BrowserAgent':
+        return <Globe size={16} className="text-blue-500" />;
+      case 'FileSystemAgent':
+        return <Folder size={16} className="text-amber-500" />;
+      case 'TerminalAgent':
+        return <Terminal size={16} className="text-green-500" />;
+      case 'ResearchAgent':
+        return <Search size={16} className="text-purple-500" />;
+      default:
+        return <Sparkles size={16} className="text-primary" />;
+    }
+  };
+
+  const isToolOutput = message.type === 'tool_output' || message.type === 'agent_start' || message.type === 'tasks_decomposed' || message.type === 'status';
+  const isError = message.type === 'error';
+
+  if (isToolOutput) {
+    // Avoid rendering empty tool calls
+    if (!message.content || (typeof message.content === 'string' && !message.content.trim()) || (typeof message.content === 'object' && Object.keys(message.content).length === 0)) {
+        return null;
+    }
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex w-full gap-4 flex-row"
+      >
+        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-muted">
+           {getAgentIcon()}
+        </div>
+        
+        <div className="flex flex-col max-w-[90%] w-full">
+            <div 
+                className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    {message.agentName || 'System'} {message.type?.replace('_', ' ')}
+                </span>
+            </div>
+
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="bg-muted/30 p-3 rounded-md text-xs font-mono whitespace-pre-wrap border border-border mt-1">
+                            {typeof message.content === 'object' ? JSON.stringify(message.content, null, 2) : message.content}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+      </motion.div>
+    )
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className={cn(
+        "flex w-[90%] gap-4",
+        isUser ? "flex-row-reverse" : "flex-row"
+      )}
+    >
+      <div className={cn(
+        "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1",
+        isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+      )}>
+        {isUser ? <User size={16} /> : <Sparkles size={16} className={isError ? "text-red-500" : "text-primary"} />}
+      </div>
+      
+      <div className={cn(
+        "flex flex-col max-w-[90%]",
+        isUser ? "items-end" : "items-start"
+      )}>
+        <div className={cn(
+          "px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm",
+          isUser 
+            ? "bg-muted text-foreground rounded-tr-none" 
+            : isError
+                ? "bg-red-500/10 text-red-600 border border-red-200 rounded-tl-none"
+                : "bg-transparent text-foreground rounded-tl-none border border-border"
+        )}>
+          {typeof message.content === 'object' ? (
+            <div className="whitespace-pre-wrap font-mono text-xs">
+              {JSON.stringify(message.content, null, 2)}
+            </div>
+          ) : (
+            <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-normal">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  pre: ({ children }) => <div className="not-prose">{children}</div>,
+                  a: ({ node, ...props }) => (
+                    <a 
+                      {...props} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-primary hover:underline"
+                    />
+                  ),
+                  code: (props: any) => {
+                    const { children, className, node, ...rest } = props;
+                    const match = /language-(\w+)/.exec(className || '');
+                    const isInline = !match && !rest.inline;
+
+                    if (isInline) {
+                      return (
+                        <code className="bg-muted/50 px-1.5 py-0.5 rounded text-xs font-mono font-medium text-foreground" {...rest}>
+                          {children}
+                        </code>
+                      );
+                    }
+
+                    return (
+                      <CodeBlock language={match ? match[1] : ''} value={String(children).replace(/\n$/, '')} />
+                    );
+                  }
+                }}
+              >
+                {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+        <span className="text-[10px] text-muted-foreground mt-1 px-1">
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+    </motion.div>
+  );
+};
+
+export default React.memo(ChatMessage);

@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+websockets
+langchain
+langchain-community
+langchain-anthropic
+langchain-openai
+langchain-google-genai
+langchain-groq
+browser-use
+playwright
+python-dotenv
+httpx
