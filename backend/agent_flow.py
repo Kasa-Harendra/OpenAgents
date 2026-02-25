@@ -74,7 +74,10 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                         ]
                     },
                     version="v2",
+<<<<<<< HEAD
                     config={"recursion_limit": 100}
+=======
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
                 ):
                     kind = event["event"]
                     
@@ -132,7 +135,11 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                 MAX_RETRIES -= 1
         return False # Failure message
 
+<<<<<<< HEAD
 async def execute(prompt, base_directory, history: List[Dict] = [], callback=None):
+=======
+async def execute(prompt, history: List[Dict] = [], callback=None):
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
     """
     This function is responsible for executing the task.
     This handles:
@@ -155,7 +162,11 @@ async def execute(prompt, base_directory, history: List[Dict] = [], callback=Non
     try:
         from backend.agents.orchestrator_agent import orchestrator
         loop = asyncio.get_running_loop()
+<<<<<<< HEAD
         tasks: List[Dict] = await loop.run_in_executor(None, orchestrator.decompose_task, prompt, base_directory, history)
+=======
+        tasks: List[Dict] = await loop.run_in_executor(None, orchestrator.decompose_task, prompt, history)
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
         print(f"DEBUG: decomposed tasks: {tasks}")
     except Exception as e:
         print(f"DEBUG: Error in decompose_task: {e}")

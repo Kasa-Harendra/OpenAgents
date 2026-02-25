@@ -40,7 +40,10 @@ class UserRequest(BaseModel):
     prompt: str
     session_id: str
     history: List[Dict[str, Any]] = []
+<<<<<<< HEAD
     base_directory: str
+=======
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
     model_config = {
         "extra": "ignore"
     }

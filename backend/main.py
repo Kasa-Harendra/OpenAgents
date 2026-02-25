@@ -45,12 +45,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 session_id = request.session_id
                 # History is available in request.history if needed for context
                 history = request.history or []
+<<<<<<< HEAD
                 base_directory = request.base_directory
+=======
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 
                 async def streaming_callback(event: websocket_message):
                     await manager.send_json_safe(event, websocket)
 
+<<<<<<< HEAD
                 await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
+=======
+                await execute(prompt, history=history, callback=streaming_callback)
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 
             except json.JSONDecodeError:
                 await manager.send_json_safe(websocket_message(type="error", content="Invalid JSON format"), websocket)

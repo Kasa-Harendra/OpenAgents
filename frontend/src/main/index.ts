@@ -1,7 +1,13 @@
+<<<<<<< HEAD
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+=======
+import { app, BrowserWindow } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -13,10 +19,13 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
+<<<<<<< HEAD
   const preloadPath = path.resolve(__dirname, '../preload/index.js');
   console.log('Main: Resolving preload path:', preloadPath);
   console.log('Main: Preload file exists:', fs.existsSync(preloadPath));
 
+=======
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -26,10 +35,16 @@ function createWindow() {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
+<<<<<<< HEAD
       preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+=======
+      preload: path.join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
     },
   });
 
@@ -70,6 +85,7 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     createWindow();
 
+<<<<<<< HEAD
     // Register IPC handlers
     ipcMain.handle('select-directory', async () => {
       console.log('IPC: select-directory handler called');
@@ -92,6 +108,8 @@ if (!gotTheLock) {
       }
     });
 
+=======
+>>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
