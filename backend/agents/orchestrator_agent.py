@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 import json
 import os
 
-from backend.agents.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import get_agent_llm
+from backend.agents.prompts import ORCHESTRATOR_PROMPT_BASE, get_structured_prompt
 
 class SubTask(BaseModel):
     """Model for a subtask in the execution plan"""
@@ -44,7 +45,7 @@ class OrchestratorAgent:
         Initialize orchestrator with LLM and agent registry.
         Uses the configured LLM for the 'Coordinator' agent.
         """
-        self.llm = agent_llms["Coordinator"]
+        self.llm = get_agent_llm("Coordinator")
         self.agent_registry = self._load_agent_registry()
         self.parser = JsonOutputParser(pydantic_object=ExecutionPlan)
         
@@ -61,12 +62,15 @@ class OrchestratorAgent:
             return json.load(f)
     
     def _format_agent_registry(self) -> str:
-        """Format agent registry for inclusion in prompt"""
+        """Format agent registry for inclusion in prompt, including only configured agents"""
         formatted = "Available Agents:\n\n"
         
         for agent_name, agent_info in self.agent_registry["agents"].items():
-            status = "✅ Implemented" if agent_info["implemented"] else "⚠️ Not yet implemented"
-            formatted += f"**{agent_name}** {status}\n"
+                
+            if not get_agent_llm(agent_name):
+                continue
+                
+            formatted += f"**{agent_name}** ✅ Configured & Ready\n"
             formatted += f"Description: {agent_info['description']}\n"
             formatted += f"Capabilities:\n"
             for capability in agent_info["capabilities"]:
@@ -77,98 +81,7 @@ class OrchestratorAgent:
     
     def _create_system_prompt(self) -> str:
         """Create the system prompt for task decomposition"""
-        agent_registry_str = self._format_agent_registry()
-    
-        return f"""You are an intelligent task orchestrator for a multi-agent system. Your role is to:
-
-1. Analyze the user's request carefully
-2. Break it down into sequential subtasks
-3. Route each subtask to the most appropriate specialized agent
-4. Ensure subtasks are detailed, actionable, and self-contained
-
-{agent_registry_str}
-
-IMPORTANT RULES:
-- Only use agents that are marked as "✅ Implemented"
-- Each subtask should be detailed enough for the agent to execute without clarification
-- Subtasks should execute sequentially (output of one can feed into the next)
-- Choose the MOST APPROPRIATE agent for each subtask based on capabilities
-- If a task requires multiple steps, break it into separate subtasks.
-- Break every task into subtasks even if the whole belong to single agent.
-- Make subtask descriptions specific and actionable
-- For agents like BrowserAgent, the subtask must be structured as a numbered sequence, with each step using the tool names directly. For example:
-        task = "
-        1. Go to https://quotes.toscrape.com/
-        2. Use extract action with the query \"first 3 quotes with their authors\"
-        3. Save results to quotes.csv using write_file action
-        4. Do a google search for the first quote and find when it was written"
-- Never ask any agent to store some output in any variables
-- Always ensure that the task is happended with respect to the BASE_DIRECTORY provided in the prompt. 
-- The `cuurent directory` in user's prompt also refers to the BASE_DIRECTORY provided.
-- All the actions will be performed with respect to the BASE_DIRECTORY provided so ensure to setup the BASE DIRECTORY path in every decomposed subtask of FileSystemAgent and BrowserAgent
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object in this exact format:
-{{{{
-    "tasks": [
-        {{{{
-            "agent": "AgentName",
-            "subtask": "Detailed description of what this agent should do"
-        }}}}
-    ]
-}}}}
-
-EXAMPLES:
-
-Example 1 - Simple Task:
-User: "Get the list of files in the current directory"
-Output:
-{{{{
-    "tasks": [
-        {{{{
-            "agent": "FileSystemAgent",
-            "subtask": "List all files and directories in the current working directory with full details"
-        }}}}
-    ]
-}}}}
-
-Example 2 - Multi-Agent Workflow:
-User: "Research Python web frameworks and save a comparison to a file"
-Output:
-{{{{
-    "tasks": [
-        {{{{
-            "agent": "ResearchAgent",
-            "subtask": "Research the latest Python web frameworks in 2026, including FastAPI, Django, Flask. Compare their features, performance, and use cases."
-        }}}},
-        {{{{
-            "agent": "FileSystemAgent",
-            "subtask": "Create a file named 'python-frameworks-comparison.md' with the research findings in markdown format with sections for each framework including pros, cons, and best use cases."
-        }}}}
-    ]
-}}}}
-
-Example 3 - Browser + File:
-User: "Go to OpenAI pricing page and save the pricing to a JSON file"
-Output:
-{{{{
-    "tasks": [
-        {{{{
-            "agent": "BrowserAgent",
-            "subtask": "
-                1. Go to https://openai.com/pricing
-                2. Use extract action with the query 'all pricing plan details including plan names, monthly prices, and key features'
-            "
-        }}}},
-        {{{{
-            "agent": "FileSystemAgent",
-            "subtask": "Create a file named 'openai-pricing.json' with the extracted pricing data formatted as JSON with proper structure"
-        }}}}
-    ]
-}}}}
-
-Remember: Return ONLY the JSON output, no additional text or explanation."""
-
+        return ORCHESTRATOR_PROMPT_BASE.format(agent_registry_str=self._format_agent_registry())
 
     def decompose_task(self, user_prompt: str, base_directory:str, history: List[Dict] = []) -> Any:
         """
@@ -182,6 +95,10 @@ Remember: Return ONLY the JSON output, no additional text or explanation."""
             List of (agent_name, detailed_subtask_prompt) tuples
         """
         
+        if not self.llm:
+            print("Coordinator LLM not configured. Using fallback decomposition.")
+            return self._fallback_decomposition(user_prompt)
+        
         # Format history for context
         history_context = ""
         if history:
@@ -192,10 +109,15 @@ Remember: Return ONLY the JSON output, no additional text or explanation."""
                 history_context += f"{role}: {content}\n"
             history_context += "\n"
 
-        # Create the prompt template
+        # Create the system prompt using the base prompt and agent registry
+        system_prompt_str = self._create_system_prompt()
+        
+        # Use centralized prompt helper for caching and structured output
+        structured_system_prompt = get_structured_prompt(self.llm, system_prompt_str)
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self._create_system_prompt()),
-            ("user", f"""{str(history_context)}
+            structured_system_prompt,
+            ("user", f"""{{history}}
              
              BASE_DIRECTORY/CURRENT DIRECTORY: {{base_directory}}   
 
@@ -206,7 +128,7 @@ Remember: Return ONLY the JSON output, no additional text or explanation."""
         try:
             # Get LLM response
             chain = prompt | self.llm
-            response = chain.invoke({"user_request": user_prompt, "base_directory": base_directory})
+            response = chain.invoke({"history":str(history_context), "user_request": user_prompt, "base_directory": base_directory})
             print(f"DEBUG: Orchestrator raw response: {response.content}")
             
             # Extract content from response
@@ -243,29 +165,48 @@ Remember: Return ONLY the JSON output, no additional text or explanation."""
             return self._fallback_decomposition(user_prompt)
 
     
-    def _fallback_decomposition(self, user_prompt: str) -> List[Tuple[str, str]]:
+    def _fallback_decomposition(self, user_prompt: str) -> List[Dict[str, str]]:
         """
         Fallback decomposition if JSON parsing fails.
-        Simple heuristic-based routing.
+        Simple heuristic-based routing, strictly using only configured agents.
         """
         # Simple keyword-based routing as fallback
         prompt_lower = user_prompt.lower()
         
+        # Priority: Browser > Terminal > FileSystem > Research > RAG
+        # Only route if the agent is configured
+        
+        candidates = []
         if any(word in prompt_lower for word in ["navigate", "click", "login", "browser", "website", "web page"]):
-            return [{"agent": "BrowserAgent", "subtask":user_prompt}]
-        elif any(word in prompt_lower for word in ["command", "execute", "run", "script", "terminal"]):
-            return [{"agent": "TerminalAgent","subtask": user_prompt}]
-        elif any(word in prompt_lower for word in ["file", "directory", "folder", "read", "write", "create"]):
-            return [{"agent": "FileSystemAgent", "subtask": user_prompt}]
-        elif any(word in prompt_lower for word in ["search", "research", "find information", "web search"]):
-            return [{"agent": "ResearchAgent", "subtask": user_prompt}]
-        elif any(word in prompt_lower for word in ["document", "knowledge", "indexed", "rag"]):
-            return [{"agent": "RAGAgent", "subtask": user_prompt}]
-        else:
-            # Default to research agent for general queries
-            return [{"agent": "ResearchAgent", "subtask": user_prompt}]
+            candidates.append("BrowserAgent")
+        if any(word in prompt_lower for word in ["command", "execute", "run", "script", "terminal"]):
+            candidates.append("TerminalAgent")
+        if any(word in prompt_lower for word in ["file", "directory", "folder", "read", "write", "create"]):
+            candidates.append("FileSystemAgent")
+        if any(word in prompt_lower for word in ["search", "research", "find information", "web search"]):
+            candidates.append("ResearchAgent")
+        if any(word in prompt_lower for word in ["document", "knowledge", "indexed", "rag"]):
+            candidates.append("RAGAgent")
+
+        # Filter candidates by configuration
+        configured_candidates = [c for c in candidates if get_agent_llm(c)]
+        
+        if configured_candidates:
+            # Pick the most relevant one (first found)
+            return [{"agent": configured_candidates[0], "subtask": user_prompt}]
+        
+        # Final fallback: any configured agent from implemented list
+        implemented_agents = self.get_implemented_agents()
+        configured_agents = [a for a in implemented_agents if get_agent_llm(a) and a != "Coordinator"]
+        
+        if configured_agents:
+            return [{"agent": configured_agents[0], "subtask": user_prompt}]
+        
+        # If absolutely no agents are configured, return empty
+        print("CRITICAL: No specialized agents are configured for fallback.")
+        return []
     
-    def get_agent_capabilities(self) -> Dict[str, Any]:
+    def get_agents_capabilities(self) -> Dict[str, Any]:
         """
         Get the complete agent registry with capabilities.
         

@@ -9,10 +9,13 @@ from backend.db.database import engine, Base, get_db
 from backend.models.models import AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
 from backend.websocket_manager import manager
 from backend.agent_flow import execute
-from backend.routers.agent_config import router as config_router
+from backend.routers.agent_config import router as config_router, init_db
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Initialize database with default configs
+init_db()
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -45,19 +48,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 session_id = request.session_id
                 # History is available in request.history if needed for context
                 history = request.history or []
-<<<<<<< HEAD
                 base_directory = request.base_directory
-=======
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 
                 async def streaming_callback(event: websocket_message):
                     await manager.send_json_safe(event, websocket)
 
-<<<<<<< HEAD
                 await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
-=======
-                await execute(prompt, history=history, callback=streaming_callback)
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 
             except json.JSONDecodeError:
                 await manager.send_json_safe(websocket_message(type="error", content="Invalid JSON format"), websocket)

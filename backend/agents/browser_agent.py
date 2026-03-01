@@ -8,10 +8,12 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from backend.agents.model_providers.agent_llms import agent_llms, agent_configs
+from backend.agents.model_providers.agent_llms import get_agent_config, agent_configs
 from backend.agents.model_providers.models import AgentConfig
 
 def get_llm(config: AgentConfig):
+    if not config:
+        return None
     model_name = config.model_name
     base_url = config.base_url
     apikey = config.apiKey
@@ -98,7 +100,12 @@ Terminate the execution as soon as the task is done"""
 User Prompt:
 {prompt}
 """
-    llm = get_llm(agent_configs['BrowserAgent'])
+    config = get_agent_config('BrowserAgent')
+    llm = get_llm(config)
+
+    if not llm:
+        print("Error: BrowserAgent is not configured. Please set it up in the Settings page.", file=sys.stderr)
+        return "Failed: BrowserAgent unconfigured"
 
     agent = Agent(
         task=actual_prompt,

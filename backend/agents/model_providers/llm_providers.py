@@ -26,7 +26,8 @@ def provide_llm(
                     model = ChatAnthropic(
                         model_name=model_name, 
                         anthropic_api_key=apikey,
-                        anthropic_api_url=base_url
+                        anthropic_api_url=base_url,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
                     )
                 case "openai":
                     model = ChatOpenAI(

@@ -12,9 +12,13 @@ import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
 import ThemeToggle from '@/components/ThemeToggle';
 
+import { useNavigate, useLocation } from 'react-router-dom';
+
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { chats, activeChatId, setActiveChat, addChat } = useChatStore();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <motion.aside
@@ -37,7 +41,10 @@ const Sidebar: React.FC = () => {
           <span className="font-semibold text-lg truncate pr-2">AI Assistant</span>
         )}
         <button
-          onClick={() => addChat("New Chat")}
+          onClick={() => {
+            addChat("New Chat");
+            navigate("/");
+          }}
           className={cn(
             "p-2 hover:bg-hover rounded-lg transition-all active:scale-95",
             isCollapsed ? "" : "ml-auto"
@@ -57,10 +64,13 @@ const Sidebar: React.FC = () => {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              onClick={() => setActiveChat(chat.id)}
+              onClick={() => {
+                setActiveChat(chat.id);
+                navigate("/");
+              }}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all group/item",
-                activeChatId === chat.id 
+                activeChatId === chat.id && location.pathname === "/"
                   ? "bg-secondary text-secondary-foreground" 
                   : "hover:bg-hover text-muted-foreground hover:text-foreground",
                 isCollapsed ? "justify-center" : ""
@@ -81,10 +91,16 @@ const Sidebar: React.FC = () => {
           <ThemeToggle isCollapsed={isCollapsed} />
         </div>
         
-        <button className={cn(
-          "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover text-muted-foreground hover:text-foreground transition-all",
-          isCollapsed ? "justify-center" : ""
-        )}>
+        <button 
+          onClick={() => navigate("/settings")}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover transition-all",
+            location.pathname === "/settings" 
+              ? "bg-secondary text-secondary-foreground" 
+              : "text-muted-foreground hover:text-foreground",
+            isCollapsed ? "justify-center" : ""
+          )}
+        >
           <Settings size={18} />
           {!isCollapsed && <span className="text-sm font-medium">Settings</span>}
         </button>

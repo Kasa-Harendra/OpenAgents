@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import toast from 'react-hot-toast';
 
 export interface Message {
   id: string;
@@ -152,6 +153,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         
         const currentChat = get().chats.find(c => c.id === activeChatId);
         const lastMsg = currentChat?.messages[currentChat.messages.length - 1];
+
+        if (type === 'agent_error') {
+          // Show agent errors as toasts and don't add to chat to avoid clutter
+          toast.error(`${agent_name ? agent_name + ': ' : ''}${content}`, {
+            duration: 5000,
+            position: 'top-center',
+          });
+          return;
+        }
+
+        if (type === 'tool_error') {
+          // Suppress tool errors from UI as per user request
+          console.error(`Tool error in ${agent_name}:`, content);
+          return;
+        }
 
         if (type === 'content_chunk') {
           if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.type === 'agent_response' || lastMsg.type === 'content_chunk')) {

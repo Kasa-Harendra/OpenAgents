@@ -7,21 +7,31 @@ import os
 import shutil
 import pathlib
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
+import send2trash
+from spire.doc import *
+from spire.doc.common import *
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from langchain.tools import tool
 from langchain.agents import create_agent
-from backend.agents.model_providers.agent_llms import agent_llms
+from backend.agents.model_providers.agent_llms import get_agent_llm
+from backend.agents.prompts import FILE_SYSTEM_PROMPT, get_structured_prompt
 
 # --- Markdown conversion tool imports ---
 import pypandoc
 
-model = agent_llms['FileSystemAgent']
+model = get_agent_llm('FileSystemAgent')
 
 def format_size(size_bytes: int) -> str:
-    """Format bytes into human-readable string."""
+    """
+    Format bytes into a human-readable string.
+    Args:
+        size_bytes (int): Number of bytes to format.
+    Returns:
+        str: Human-readable size string.
+    """
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024.0:
             return f"{size_bytes:.1f} {unit}"
@@ -29,48 +39,86 @@ def format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 @tool("list_directory")
-def list_directory_tool(path: str = ".") -> str:
+def list_directory_tool(paths: Union[str, List[str]] = ".") -> str:
     """
-    List contents of a directory with size and type info.
+    List the contents of one or more directories, displaying each item's name, type (file or directory), size, and last modified date.
+    Returns a formatted summary per path or an error message if a path is invalid.
+    Especially useful for inspecting multiple directories at once.
+    Args:
+        paths (Union[str, List[str]]): Directory path or list of directory paths to list.
+    Returns:
+        str: Formatted directory listings or error message.
     """
-    try:
-        abs_path = os.path.abspath(path)
-        if not os.path.exists(abs_path):
-            return f"❌ Path does not exist: {path}"
-        if not os.path.isdir(abs_path):
-            return f"❌ Not a directory: {path}"
+    def format_directory_listing(path: str) -> str:
+        """
+        Build a formatted listing for a single directory path.
+        Args:
+            path (str): Directory path to list.
+        Returns:
+            str: Formatted listing or error message.
+        """
+        try:
+            abs_path = os.path.abspath(path)
+            if not os.path.exists(abs_path):
+                return f"❌ Path does not exist: {path}"
+            if not os.path.isdir(abs_path):
+                return f"❌ Not a directory: {path}"
 
-        items = os.listdir(abs_path)
-        if not items:
-            return f"✅ Directory is empty: {path}"
+            items = os.listdir(abs_path)
+            if not items:
+                return f"✅ Directory is empty: {path}"
 
-        dirs = []
-        files = []
-        for item in items:
-            item_path = os.path.join(abs_path, item)
-            try:
-                stats = os.stat(item_path)
-                size = format_size(stats.st_size)
-                mtime = datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                if os.path.isdir(item_path):
-                    dirs.append(f"📁 {item}/")
-                else:
-                    files.append(f"📄 {item} ({size}, {mtime})")
-            except Exception:
-                dirs.append(f"❓ {item} (error reading stats)")
+            dirs = []
+            files = []
+            for item in items:
+                item_path = os.path.join(abs_path, item)
+                try:
+                    stats = os.stat(item_path)
+                    size = format_size(stats.st_size)
+                    mtime = datetime.fromtimestamp(stats.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    if os.path.isdir(item_path):
+                        dirs.append(f"📁 {item}/")
+                    else:
+                        files.append(f"📄 {item} ({size}, {mtime})")
+                except Exception:
+                    dirs.append(f"❓ {item} (error reading stats)")
 
-        output = [f"✅ Contents of {path}:", "Directories:"]
-        output.extend([f"  {d}" for d in sorted(dirs)])
-        output.append("Files:")
-        output.extend([f"  {f}" for f in sorted(files)])
-        return "\n".join(output)
-    except Exception as e:
-        return f"❌ Error listing directory: {str(e)}"
+            output = [f"✅ Contents of {path}:", f"Directories ({len(dirs)}):"]
+            if dirs:
+                output.extend([f"  {d}" for d in sorted(dirs)])
+            else:
+                output.append("  (none)")
+            output.append(f"Files ({len(files)}):")
+            if files:
+                output.extend([f"  {f}" for f in sorted(files)])
+            else:
+                output.append("  (none)")
+            return "\n".join(output)
+        except Exception as e:
+            return f"❌ Error listing directory: {str(e)}"
+
+    if isinstance(paths, str):
+        path_list = [paths]
+    else:
+        path_list = list(paths) if paths else []
+
+    if not path_list:
+        return "❌ No paths provided."
+
+    sections = [format_directory_listing(path) for path in path_list]
+    return "\n\n".join(sections)
 
 @tool("read_file")
 def read_file_tool(path: str, encoding: str = "utf-8") -> str:
     """
-    Read contents of a text file.
+    Read and return the contents of a text file at the specified path using the given encoding (default: UTF-8).
+    Returns an error message if the file is not found, is not a file, or is too large (>10MB).
+    Suitable for reading single files, but can be used repeatedly for multiple files.
+    Args:
+        path (str): File path to read.
+        encoding (str): Text encoding to use.
+    Returns:
+        str: File contents or error message.
     """
     try:
         abs_path = os.path.abspath(path)
@@ -91,36 +139,84 @@ def read_file_tool(path: str, encoding: str = "utf-8") -> str:
     except Exception as e:
         return f"❌ Error reading file: {str(e)}"
 
-@tool("write_file")
-def write_file_tool(path: str, content: str, append: bool = False) -> str:
+@tool("create_bulk")
+def create_bulk_tool(files: List[Dict[str, str]]) -> str:
     """
-    Create or update a file with the given content.
+    Create multiple files at once, each with specified content.
+    Intended for use when creating more than two files in a single operation.
+    Especially efficient for batch file creation tasks.
+    Args:
+        files (List[Dict[str, str]]): Items with 'path' and 'content' keys.
+    Returns a summary of successes and failures for each file.
     """
-    try:
-        abs_path = os.path.abspath(path)
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        mode = 'a' if append else 'w'
-        with open(abs_path, mode, encoding='utf-8') as f:
-            f.write(content)
-        return f"✅ Successfully {'appended to' if append else 'written to'} {path}"
-    except Exception as e:
-        return f"❌ Error writing file: {str(e)}"
+    results = []
+    for f in files:
+        path = f.get('path')
+        content = f.get('content')
+        try:
+            abs_path = os.path.abspath(path)
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, 'w', encoding='utf-8') as file:
+                file.write(content)
+            results.append(f"✅ Created {path}")
+        except Exception as e:
+            results.append(f"❌ Failed to create {path}: {str(e)}")
+    return "\n".join(results)
 
-@tool("move_file")
-def move_file_tool(source: str, destination: str) -> str:
+
+@tool("move_bulk")
+def move_bulk_tool(moves: List[Dict[str, str]]) -> str:
     """
-    Move or rename a file or directory.
+    Move or rename multiple files or directories in a single operation.
+    Intended for use when moving or renaming more than two files or directories at once.
+    Especially efficient for batch move or rename operations.
+    Args:
+        moves (List[Dict[str, str]]): Items with 'source' and 'destination' keys.
+    Returns a summary of successes and failures for each move.
     """
-    try:
-        shutil.move(source, destination)
-        return f"✅ Successfully moved {source} to {destination}"
-    except Exception as e:
-        return f"❌ Error moving {source}: {str(e)}"
+    results = []
+    for move in moves:
+        src = move.get('source')
+        dst = move.get('destination')
+        try:
+            shutil.move(src, dst)
+            results.append(f"✅ Moved {src} to {dst}")
+        except Exception as e:
+            results.append(f"❌ Failed to move {src} to {dst}: {str(e)}")
+    return "\n".join(results)
+
+@tool("rename_bulk")
+def rename_bulk_tool(renames: List[Dict[str, str]]) -> str:
+    """
+    Rename multiple files or directories in a single operation.
+    Intended for use when renaming more than two files or directories at once.
+    Especially efficient for batch rename operations.
+    Args:
+        renames (List[Dict[str, str]]): Items with 'old_name' and 'new_name' keys.
+    Returns a summary of successes and failures for each rename.
+    """
+    results = []
+    for r in renames:
+        old = r.get('old_name')
+        new = r.get('new_name')
+        try:
+            os.rename(old, new)
+            results.append(f"✅ Renamed {old} to {new}")
+        except Exception as e:
+            results.append(f"❌ Failed to rename {old} to {new}: {str(e)}")
+    return "\n".join(results)
 
 @tool("copy_file_tool")
 def copy_file_tool(source: str, destination: str) -> str:
     """
-    Copy a file or directory.
+    Copy a file or directory from the source path to the destination path.
+    Supports both files and directories. Returns a success or error message.
+    Best for single copy operations; for more than two, use a bulk approach.
+    Args:
+        source (str): Source file or directory path.
+        destination (str): Destination path.
+    Returns:
+        str: Success or error message.
     """
     try:
         if os.path.isdir(source):
@@ -131,23 +227,38 @@ def copy_file_tool(source: str, destination: str) -> str:
     except Exception as e:
         return f"❌ Error copying {source}: {str(e)}"
 
-@tool("delete_file")
-def delete_file_tool(path: str) -> str:
+@tool("delete_bulk")
+def delete_bulk_tool(paths: List[str]) -> str:
     """
-    Permanently delete a file.
+    Move multiple files or directories to the recycle bin (soft delete) in one operation.
+    Intended for use when deleting more than two files or directories at once.
+    Especially efficient for batch delete operations.
+    Args:
+        paths (List[str]): File or directory paths to delete.
+    Returns a summary of successes and failures for each path.
     """
-    try:
-        if os.path.isdir(path):
-            return f"❌ {path} is a directory. Use delete_directory to remove it."
-        os.remove(path)
-        return f"✅ Successfully deleted {path}"
-    except Exception as e:
-        return f"❌ Error deleting file: {str(e)}"
+    results = []
+    for path in paths:
+        try:
+            if os.path.exists(path):
+                send2trash.send2trash(os.path.abspath(path))
+                results.append(f"✅ Moved {path} to recycle bin")
+            else:
+                results.append(f"❌ Path not found: {path}")
+        except Exception as e:
+            results.append(f"❌ Failed to delete {path}: {str(e)}")
+    return "\n".join(results)
 
 @tool("create_directory")
 def create_directory_tool(path: str) -> str:
     """
-    Create a new directory.
+    Create a new directory at the specified path, including any necessary parent directories.
+    Returns a success or error message.
+    Suitable for single directory creation; for more than two, use a loop or bulk method.
+    Args:
+        path (str): Directory path to create.
+    Returns:
+        str: Success or error message.
     """
     try:
         os.makedirs(path, exist_ok=True)
@@ -158,23 +269,34 @@ def create_directory_tool(path: str) -> str:
 @tool("delete_directory")
 def delete_directory_tool(path: str, recursive: bool = False) -> str:
     """
-    Remove a directory.
+    Move a directory to the recycle bin (soft delete).
+    Returns a success message or an error if the path is not a directory.
+    Best for single directory deletions; for more than two, use the bulk tool.
+    Args:
+        path (str): Directory path to delete.
+        recursive (bool): Unused; retained for compatibility.
+    Returns:
+        str: Success or error message.
     """
     try:
         if not os.path.isdir(path):
             return f"❌ Not a directory: {path}"
-        if recursive:
-            shutil.rmtree(path)
-        else:
-            os.rmdir(path)
-        return f"✅ Successfully deleted directory: {path}"
+        send2trash.send2trash(os.path.abspath(path))
+        return f"✅ Successfully moved directory {path} to recycle bin"
     except Exception as e:
         return f"❌ Error deleting directory: {str(e)}"
 
 @tool("search_files")
 def search_files_tool(pattern: str, path: str = ".") -> str:
     """
-    Search for files matching a pattern using glob.
+    Search for files matching a glob pattern within the specified directory and its subdirectories.
+    Returns a formatted list of found files or a message if none are found.
+    Especially useful for finding more than two files matching a pattern.
+    Args:
+        pattern (str): Glob pattern to match.
+        path (str): Root directory to search.
+    Returns:
+        str: Search results or error message.
     """
     try:
         found = list(pathlib.Path(path).rglob(pattern))
@@ -189,90 +311,131 @@ def search_files_tool(pattern: str, path: str = ".") -> str:
 
 # --- Markdown conversion tool definition ---
 
-@tool("convert_markdown_content")
-def convert_markdown_content_tool(markdown_content: str, output_format: str = "docx", output_path: str = None) -> str:
+@tool("write-file")
+def write_file_tool(markdown_content: str, output_formats: Union[str, List[str]] = "md", output_paths: Union[str, List[str]] = None) -> str:
     """
-    Convert markdown content to the specified format (docx, pdf, txt, etc.).
+    Write markdown content to one or more output formats (docx, pdf, txt, etc.) and save to corresponding files.
+    Uses pypandoc as primary, with fallbacks for docx, pdf, and txt.
     Args:
-        markdown_content: The markdown text to convert.
-        output_format: Target format (docx, pdf, txt, etc.).
-        output_path: Optional output file path. If not provided, uses 'converted_output.<ext>'.
+        markdown_content (str): Markdown text to convert/write.
+        output_formats (Union[str, List[str]]): Target format or list of formats.
+        output_paths (Union[str, List[str]]): Target file path or list of paths.
+                      If lists are provided, they must be the same length.
+                      If only formats are provided, default filenames like 'converted_output.<ext>' are used.
     Returns:
-        Success or error message with output file path.
+        str: Summary of creation results.
     """
     import tempfile
-    supported_formats = ["docx", "pdf", "txt", "markdown", "md"]
-    if output_format not in supported_formats:
-        return f"Unsupported output format: {output_format}. Supported: {', '.join(supported_formats)}."
-    ext = output_format if output_format != "md" else "markdown"
-    if output_path is None:
-        output_path = f"converted_output.{ext}"
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".md", mode="w", encoding="utf-8") as tmp_md:
-            tmp_md.write(markdown_content)
-            tmp_md_path = tmp_md.name
-        pypandoc.convert_file(tmp_md_path, output_format, outputfile=output_path)
-        os.remove(tmp_md_path)
-        return f"Conversion successful: {output_path}"
-    except Exception as e:
-        return f"Conversion failed: {str(e)}"
+    
+    # Normalize inputs to lists
+    formats = [output_formats] if isinstance(output_formats, str) else output_formats
+    if output_paths is None:
+        paths = [f"converted_output.{f if f != 'md' else 'markdown'}" for f in formats]
+    else:
+        paths = [output_paths] if isinstance(output_paths, str) else output_paths
 
-fs_tools = [
+    if len(formats) != len(paths):
+        return f"❌ Mismatch: Received {len(formats)} formats and {len(paths)} paths."
+
+    supported_formats = ["docx", "pdf", "html", "txt", "markdown", "md"]
+    results = []
+
+    def ensure_output_dir(path):
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        except Exception:
+            pass
+
+    for fmt, path in zip(formats, paths):
+        if fmt not in supported_formats:
+            results.append(f"❌ Unsupported format '{fmt}' for {path}")
+            continue
+        
+        ensure_output_dir(path)
+        
+        success = False
+        # Try pypandoc first
+        try:
+            import pypandoc
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".md", mode="w", encoding="utf-8") as tmp_md:
+                tmp_md.write(markdown_content)
+                tmp_md_path = tmp_md.name
+            try:
+                pypandoc.convert_file(tmp_md_path, fmt, outputfile=path, extra_args=["--standalone"])
+                os.remove(tmp_md_path)
+                results.append(f"✅ Creation successful: {path}")
+                success = True
+            except Exception:
+                os.remove(tmp_md_path)
+        except Exception:
+            pass
+
+        if success:
+            continue
+
+        # Fallbacks
+        try:
+            if fmt == "pdf":
+                from markdown_pdf import MarkdownPdf, Section
+                pdf = MarkdownPdf()
+                content = markdown_content.strip()
+                if content.startswith("##"):
+                    content = content[1:]
+                elif not content.startswith("#"):
+                    content = "# \n" + content
+                pdf.add_section(Section(content))
+                pdf.save(path)
+                results.append(f"✅ Conversion successful (fallback): {path}")
+            elif fmt == "txt":
+                import markdown2
+                from bs4 import BeautifulSoup
+                html = markdown2.markdown(markdown_content)
+                soup = BeautifulSoup(html, "html.parser")
+                text = soup.get_text()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                results.append(f"✅ Conversion successful (fallback): {path}")
+            elif fmt in ["md", "markdown"]:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(markdown_content)
+                results.append(f"✅ Creation successful: {path}")
+            else:
+                results.append(f"❌ Conversion failed for {fmt} at {path}: No available fallback.")
+        except Exception as e:
+            results.append(f"❌ Conversion failed for {fmt} at {path}: {str(e)}")
+
+    return "\n".join(results)
+
+tools = [
     list_directory_tool,
     read_file_tool,
-    write_file_tool,
-    move_file_tool,
+    create_bulk_tool,
+    move_bulk_tool,
+    rename_bulk_tool,
     copy_file_tool,
-    delete_file_tool,
+    delete_bulk_tool,
     create_directory_tool,
     delete_directory_tool,
     search_files_tool,
-    convert_markdown_content_tool
+    write_file_tool
 ]
+
+# Use centralized prompt helper for caching
+structured_system_prompt = get_structured_prompt(model, FILE_SYSTEM_PROMPT)
 
 agent = create_agent(
     model,
-    fs_tools,
-    system_prompt=(
-        "You are a File System Manager responsible for precise file and directory operations.",
-        "",
-        "CRITICAL DIRECTIVE: DO what is instructed and NEVER deviate from the given task. Complete the task efficiently without unnecessary questioning or alternative suggestions unless safety is compromised.",
-        "",
-        "AVAILABLE OPERATIONS:",
-        "- list_directory: Enumerate directory contents with sizes and dates",
-        "- read_file: Read text file contents (limit 10MB)",
-        "- write_file: Create or overwrite files (auto-creates parent directories)",
-        "- move_file: Rename or relocate files/directories",
-        "- copy_file_tool: Duplicate files or repositories",
-        "- delete_file: Permanently remove a file",
-        "- create_directory: Initialize a new directory",
-        "- delete_directory: Remove a folder (recursive option available)",
-        "- search_files: Find files using patterns (e.g., *.py)",
-        "- convert_markdown_content: Export markdown to docx, pdf, or txt",
-        "",
-        "EXECUTION STANDARDS:",
-        "1. PATHS: Use absolute paths or reliable relative paths. Validate existence before processing.",
-        "2. SAFETY: Avoid destructive operations unless explicitly requested. Warn about large file reads.",
-        "3. CLEANLINESS: Automate parent directory creation. Default to UTF-8 encoding.",
-        "4. FEEDBACK: Provide clear, structured success/error messages. Include sizes and counts where applicable.",
-        "5. CONTEXT: Always process your content before performing file operations. Remove unnecessary context that the user doesn't intend, such as 'Previous Agent' or 'Previous agent response'.",
-        "",
-        "ERROR HANDLING:",
-        "- If a file is missing, suggest potential alternatives if found in the same directory.",
-        "- If permission is denied, clearly state it and suggest a different location.",
-        "",
-        "EXAMPLES:",
-        "1. List files: action='list_directory', path='C:\\Projects\\App'",
-        "2. Create log: action='write_file', path='logs/session.log', content='[INFO] System initialized'",
-        "3. Remove temp: action='delete_file', path='temp/cache.tmp'",
-        "4. Search code: action='search_files', pattern='*.py', path='.'",
-        "",
-        "Always use the provided manual tools. Do not rely on external toolkits or library-specific abstractions."
-    ),
+    tools,
+    system_prompt=structured_system_prompt,
     name="FileSystemAgent"
 )
 
 def run_agentic_filesystem_demo():
+    """
+    Run a scripted demo of the file system agent.
+    Returns:
+        None
+    """
     instructions = [
         ("user", "Write 'Hello World!' to a file named example.txt."),
         ("user", "List all files in the directory."),

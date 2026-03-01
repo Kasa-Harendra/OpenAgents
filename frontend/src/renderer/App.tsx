@@ -6,6 +6,8 @@ import { useThemeStore } from './stores/themeStore';
 import AppLayout from './components/AppLayout';
 import ChatWindow from './components/ChatWindow';
 
+import SettingsPage from './components/SettingsPage';
+
 export default function App() {
   const { openLauncher } = useTaskStore();
   const { theme } = useThemeStore();
@@ -39,6 +41,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           <Routes>
             <Route path="/" element={<ChatWindow />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AnimatePresence>

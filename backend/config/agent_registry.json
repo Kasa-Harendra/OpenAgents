@@ -32,21 +32,22 @@
         "Run scripts and build tools",
         "Install packages and dependencies",
         "Git operations (clone, commit, push)",
-        "File operations via CLI",
+        "Cannot do File Operations and File type conversions",
         "Process management"
       ],
       "skill_path": "backend/skills/terminal-execution/SKILL.md",
       "implemented": true
     },
     "FileSystemAgent": {
-      "description": "File and directory operations for reading, writing, and managing files",
+      "description": "Complete file and directory management including reading, writing, and converting documents (PDF, DOCX, TXT, MD)",
       "capabilities": [
         "List files and directories",
-        "Read file contents",
-        "Write/create new files",
-        "Move/rename files",
-        "Delete files",
-        "Directory exploration and management"
+        "Read file contents (limit 10MB)",
+        "Can create PDFs, DOCX, TXT, HTML, MD files - can be empty or contains the content from other agents like ResearchAgent",
+        "Move, rename, and copy files or repositories",
+        "Delete files and directories safely",
+        "Search for files using patterns and explore directory trees",
+        "Cannot convert file conversions." 
       ],
       "skill_path": "backend/skills/filesystem-management/SKILL.md",
       "implemented": true
@@ -68,6 +69,7 @@
       "capabilities": [
         "Perform web searches",
         "Gather information from multiple sources",
+        "Cannot do file creation and file writing",
         "Answer questions with web research",
         "Summarize findings",
         "Find latest information on topics",
@@ -75,19 +77,6 @@
       ],
       "skill_path": null,
       "implemented": true
-    },
-    "ScrapingAgent": {
-      "description": "Fast data extraction from web pages without browser interaction using crawl4ai",
-      "capabilities": [
-        "Fast data extraction from web pages",
-        "Scrape pricing tables",
-        "Extract structured content",
-        "Convert HTML to Markdown",
-        "Extract product catalogs",
-        "Get documentation content"
-      ],
-      "skill_path": "backend/skills/web-scraping/SKILL.md",
-      "implemented": false
     },
     "IntegratorAgent": {
       "description": "Integration with external services like Gmail, Google Drive, and Calendar via MCP",

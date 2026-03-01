@@ -5,10 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electron', {
   // Add IPC methods here as needed
   platform: process.platform,
-<<<<<<< HEAD
   selectDirectory: () => ipcRenderer.invoke('select-directory'),
-=======
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
 });
 
 // Expose API for communicating with FastAPI backend

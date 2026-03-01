@@ -4,6 +4,7 @@ from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from backend.agents.model_providers.agent_llms import agent_llms
+from backend.agents.prompts import YT_PROMPT_BASE, get_structured_prompt
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,42 +32,11 @@ def main():
 	vector_store = InMemoryVectorStore.from_documents(chunks, embedding=embedding_model)
 	retriever = vector_store.as_retriever()
 	model: BaseChatModel = agent_llms['RAGAgent']
-	system_prompt = (
-		"You are a YouTube Video Explainer Agent. Your job is to answer questions about the content of a YouTube video transcript.",
-		"",
-		"CORE FUNCTION:",
-		"Search through indexed transcript chunks to provide accurate, context-aware answers with source citations.",
-		"",
-		"RETRIEVAL PROCESS:",
-		"1. Understand the user's question",
-		"2. Retrieve relevant transcript chunks from vector store",
-		"3. Analyze retrieved context for relevance",
-		"4. Synthesize answer based ONLY on retrieved information",
-		"5. Cite source segments",
-		"",
-		"ANSWER GUIDELINES:",
-		"- Answer based EXCLUSIVELY on retrieved context",
-		"- Keep answers concise (3-4 sentences maximum)",
-		"- If information is insufficient, say: 'Not found in indexed transcript'",
-		"- Never hallucinate or add external knowledge",
-		"- Always cite source segments",
-		"",
-		"CONTEXT MANAGEMENT:",
-		"- Consider chat history for context",
-		"- Handle follow-up questions appropriately",
-		"- Reformulate query if no results found",
-		"",
-		"RESPONSE TEMPLATES:",
-		"✅ Information Found: 'Based on the transcript: [answer]. Source: [segment]'",
-		"❌ Information Not Found: 'I couldn't find information about [topic] in the indexed transcript.'",
-		"",
-		"CRITICAL: If retrieved context doesn't contain the answer, explicitly state this.",
-		"Never guess or add information not in the transcript.",
-		"",
-		"Context: {context}"
-	)
+	# Use centralized prompt helper for caching
+	structured_system_prompt = get_structured_prompt(model, YT_PROMPT_BASE)
+	
 	prompt = ChatPromptTemplate.from_messages([
-		("system", system_prompt),
+		("system", structured_system_prompt if isinstance(structured_system_prompt, (str, list)) else structured_system_prompt.content),
 		("human", "{input}"),
 	])
 	history = []  # Store last 3 user queries

@@ -16,6 +16,17 @@ from langgraph.graph.state import CompiledStateGraph
 from langchain.agents.middleware.types import (AgentState, _InputAgentState, _OutputAgentState)
 from langchain_core.prompts import PromptTemplate
 
+def _is_agent_config_error(error_str: str) -> bool:
+    """Helper to determine if an error is likely a configuration or provider issue."""
+    error_lower = error_str.lower()
+    keywords = [
+        "api_key", "api key", "auth", "unauthorized", "quota", "limit", 
+        "unreachable", "connection", "timeout", "model", "not found", 
+        "does not exist", "404", "status code", "refused", "rate", "token", 
+        "invalid", "forbidden", "dns", "proxy", "bad request", "service unavailable"
+    ]
+    return any(kw in error_lower for kw in keywords)
+
 def _get_agent(agent_name: str) -> CompiledStateGraph[AgentState[Any], Any, _InputAgentState, _OutputAgentState[Any]]:
     match(agent_name):
         case "FileSystemAgent":
@@ -33,10 +44,6 @@ def _get_agent(agent_name: str) -> CompiledStateGraph[AgentState[Any], Any, _Inp
         
 def _process_subtask(sub_task: str, context: List[Dict]) -> str:
     context_prompt_template = """
-Previous Agent:
-{agent}
-
-Response from Previous Agent:
 {response}
 """
     prompt_template = PromptTemplate.from_template(context_prompt_template)
@@ -52,12 +59,16 @@ Response from Previous Agent:
 
 def _evaluate_response(prompt: str, response: str):
     from backend.agents.evaluation_agent import agent as evaluation_agent
-    verdict = evaluation_agent.evaluate(
-        prompt=prompt,
-        response=response
-    )
+    try:
+        verdict = evaluation_agent.evaluate(
+            prompt=prompt,
+            response=response
+        )
 
-    return True if verdict == "Proceed" else "False"
+        return True if verdict == "Proceed" else False
+    except Exception as e:
+        print(f"Error in evaluation_agent: {e}")
+        return True
 
 async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, callback=None):
         MAX_RETRIES = 3
@@ -74,10 +85,7 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                         ]
                     },
                     version="v2",
-<<<<<<< HEAD
                     config={"recursion_limit": 100}
-=======
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
                 ):
                     kind = event["event"]
                     
@@ -97,13 +105,21 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                     elif kind == "on_tool_end":
                         tool_output = event["data"]["output"]
                         if callback:
-                            # We send tool output as a whole, but it's "streaming" in the sense that it appears as soon as it's ready
                             await callback(websocket_message(
                                 type="tool_output",
                                 agent_name=agent.name,
                                 content=str(tool_output)
                             ))
                     
+                    elif kind == "on_tool_error":
+                        tool_error = event["data"]["error"]
+                        if callback:
+                            await callback(websocket_message(
+                                type="tool_error",
+                                agent_name=agent.name,
+                                content=str(tool_error)
+                            ))
+
                     # Status updates
                     elif kind == "on_tool_start":
                         tool_name = event["name"]
@@ -126,20 +142,21 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                     MAX_RETRIES -= 1
 
             except Exception as e:
-                print(f"Error occured: {e}")
+                error_str = str(e)
+                print(f"Error occured in {agent.name}: {error_str}")
+                
+                is_agent_error = _is_agent_config_error(error_str)
+                
                 if callback:
                     await callback(websocket_message(
-                        type="error",
-                        content=str(e)
+                        type="agent_error" if is_agent_error else "error",
+                        agent_name=agent.name,
+                        content=error_str
                      ))
                 MAX_RETRIES -= 1
         return False # Failure message
 
-<<<<<<< HEAD
 async def execute(prompt, base_directory, history: List[Dict] = [], callback=None):
-=======
-async def execute(prompt, history: List[Dict] = [], callback=None):
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
     """
     This function is responsible for executing the task.
     This handles:
@@ -162,16 +179,19 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
     try:
         from backend.agents.orchestrator_agent import orchestrator
         loop = asyncio.get_running_loop()
-<<<<<<< HEAD
         tasks: List[Dict] = await loop.run_in_executor(None, orchestrator.decompose_task, prompt, base_directory, history)
-=======
-        tasks: List[Dict] = await loop.run_in_executor(None, orchestrator.decompose_task, prompt, history)
->>>>>>> b77603ccca528f233f6ce3688c4be5faf77979b3
         print(f"DEBUG: decomposed tasks: {tasks}")
     except Exception as e:
-        print(f"DEBUG: Error in decompose_task: {e}")
+        error_str = str(e)
+        print(f"DEBUG: Error in decompose_task: {error_str}")
+        
+        is_agent_error = _is_agent_config_error(error_str)
+        
         if callback:
-            await callback(websocket_message(type="error", content=f"Decomposition failed: {e}"))
+            await callback(websocket_message(
+                type="agent_error" if is_agent_error else "error", 
+                content=f"Decomposition failed: {error_str}"
+            ))
         return
 
     if callback:
@@ -185,7 +205,22 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
     # Executing in a row while evaluating
     for agent_name, sub_task in zip(agents, sub_tasks):
         print(f"DEBUG: processing task for agent: {agent_name}")
+        
+        # Check if agent is configured
+        from backend.agents.model_providers.agent_llms import get_agent_llm
+        if agent_name != "Coordinator" and not get_agent_llm(agent_name):
+            error_msg = f"Agent '{agent_name}' is not configured. Please go to Settings to set it up."
+            if callback:
+                await callback(websocket_message(type="agent_error", content=error_msg))
+            return error_msg
+
         agent = _get_agent(agent_name)
+        # If the agent module was imported but 'agent' is None (config missing at import)
+        if agent is None:
+            error_msg = f"Agent '{agent_name}' failed to initialize. Please check its configuration."
+            if callback:
+                await callback(websocket_message(type="agent_error", content=error_msg))
+            return error_msg
         processed_sub_task = _process_subtask(sub_task, context)
 
         if callback:
@@ -195,9 +230,9 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
             # Executing the sub_task by the agent with Exception Handling and Considerable Evaluation
             print(f"DEBUG: invoking {agent_name}")
             if not (await _invoke_agent(agent, processed_sub_task, context, callback)):
+                # If it wasn't already sent as an agent_error inside _invoke_agent
                 error_msg = f"{agent_name} failed to do - {sub_task}"
-                if callback:
-                    await callback(websocket_message(type="error", content=error_msg))
+                # We don't send extra error here if it's already failed multiple times
                 return error_msg
 
         elif agent_name in ["BrowserAgent"]:
@@ -226,13 +261,16 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
                     error_msg = f"BrowserAgent failed: {err if err else res}"
                     print(f"DEBUG: {error_msg}")
                     if callback:
-                        await callback(websocket_message(type="error", content=error_msg))
+                        # Subprocess failures are often tool-like but can be configuration issues (e.g. missing executable)
+                        # For now, treat as tool_error to avoid duplicate chat messages if possible, 
+                        # but if it stops the whole flow we might want a toast.
+                        await callback(websocket_message(type="agent_error", content=error_msg))
                     return error_msg
             except Exception as e:
                 error_msg = f"Error launching BrowserAgent subprocess: {e}"
                 print(f"DEBUG: {error_msg}")
                 if callback:
-                    await callback(websocket_message(type="error", content=error_msg))
+                    await callback(websocket_message(type="agent_error", content=error_msg))
                 return error_msg
 
     if callback:
@@ -243,7 +281,7 @@ async def execute(prompt, history: List[Dict] = [], callback=None):
 async def main():
     await execute("""
 Web Search about AI and save the results to `results.md`.
-""")
+""", base_directory=".")
 
 if __name__ == "__main__":
     asyncio.run(main())
