@@ -1,8 +1,12 @@
-import json
-import os
-from dotenv import load_dotenv
 import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+import os
+import json
+from dotenv import load_dotenv
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from backend.agents.model_providers.models import AgentConfig
 from backend.agents.model_providers.llm_providers import provide_llm
@@ -38,7 +42,7 @@ def load_agent_llms():
                 type=config.agent_type,
                 provider=config.llm_provider,
                 model_name=model_name,
-                apiKey=llm_config.get('api_key'),
+                api_key=llm_config.get('api_key'),
                 base_url=llm_config.get('base_url')
             )
             

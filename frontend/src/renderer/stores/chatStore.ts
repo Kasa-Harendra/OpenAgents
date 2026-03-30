@@ -35,6 +35,8 @@ interface ChatState {
   sendMessage: (content: string) => void;
   baseDirectory: string | null;
   setBaseDirectory: (path: string | null) => void;
+  chatMode: 'multiagent' | 'chat';
+  setChatMode: (mode: 'multiagent' | 'chat') => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -43,8 +45,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   socket: null,
   isConnected: false,
   baseDirectory: null,
+  chatMode: 'multiagent',
   
   setBaseDirectory: (path) => set({ baseDirectory: path }),
+  setChatMode: (mode) => set({ chatMode: mode }),
   
   addChat: (title) => {
     const newChat: Chat = {
@@ -249,7 +253,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       prompt: content,
       session_id: activeChatId,
       history: history,
-      base_directory: get().baseDirectory
+      base_directory: get().baseDirectory,
+      chat_mode: get().chatMode
     };
 
       socket.send(JSON.stringify(payload));

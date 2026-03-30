@@ -5,6 +5,9 @@ import { cn } from '@/lib/utils';
 import { User, Sparkles, Globe, Folder, Terminal, ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -162,7 +165,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-normal">
               <ReactMarkdown 
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
                 components={{
                   pre: ({ children }) => <div className="not-prose">{children}</div>,
                   a: ({ node, ...props }) => (

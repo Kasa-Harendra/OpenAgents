@@ -6,5 +6,5 @@ class AgentConfig(BaseModel):
     type: str
     provider: str
     model_name: str
-    apiKey: Optional[str]
+    api_key: Optional[str]
     base_url: Optional[str]

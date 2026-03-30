@@ -15,8 +15,8 @@ def provide_llm(
     config: AgentConfig
 ) -> BaseChatModel:
     model_name = config.model_name
-    apikey = config.apiKey
-    base_url = config.base_url
+    apikey = config.api_key
+    base_url = config.base_url if config.base_url != "" else None
 
     model = None
     match(config.type):
@@ -26,14 +26,14 @@ def provide_llm(
                     model = ChatAnthropic(
                         model_name=model_name, 
                         anthropic_api_key=apikey,
-                        anthropic_api_url=base_url,
+                        **({"anthropic_api_url": base_url} if base_url else {}),
                         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
                     )
                 case "openai":
                     model = ChatOpenAI(
                         model=model_name,
-                        base_url=base_url,
-                        api_key=apikey
+                        api_key=apikey,
+                        **({"base_url": base_url} if base_url else {})
                     )
                 case "gemini":
                     model = ChatGoogleGenerativeAI(
@@ -43,27 +43,27 @@ def provide_llm(
                 case "ollama":
                     model = ChatOllama(
                         model=model_name,
-                        base_url=base_url,
+                        **({"base_url": base_url} if base_url else {})
                     )
                 case "groq":
                     model = ChatGroq(
                         model=model_name,
                         api_key=apikey,
-                        base_url=base_url
+                        **({"base_url": base_url} if base_url else {}) 
                     )
                 case _:
                     model = ChatOpenAI(
                         model=model_name,
-                        base_url=base_url,
-                        api_key=apikey
+                        api_key=apikey,
+                        **({"base_url": base_url} if base_url else {})
                     )
         case "embed":
             match(config.provider):
                 case "openai":
                     model = OpenAIEmbeddings(
                         model=model_name,
-                        base_url=base_url,
-                        api_key=apikey
+                        api_key=apikey,
+                        **({"base_url": base_url} if base_url else {})
                     )
                 case "gemini":
                     model = GoogleGenerativeAIEmbeddings(

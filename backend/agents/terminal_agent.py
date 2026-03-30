@@ -1,6 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 import asyncio
 from langchain_ollama import ChatOllama
@@ -9,7 +13,7 @@ from langchain.tools import tool
 import subprocess
 
 from backend.agents.model_providers.agent_llms import get_agent_llm
-from backend.agents.prompts import TERMINAL_PROMPT, get_structured_prompt
+from backend.agents.prompts.prompts import TERMINAL_PROMPT, get_structured_prompt, get_agent_system_prompt
 
 @tool
 def run_windows_command(commands: list):
@@ -37,19 +41,23 @@ def read_file(file_name: str):
 
 tools = [run_windows_command, read_file]
 
-model = get_agent_llm('TerminalAgent')
-if model:
-    # Use centralized prompt helper for caching
-    structured_system_prompt = get_structured_prompt(model, TERMINAL_PROMPT)
+def get_agent():
+    model = get_agent_llm('TerminalAgent')
+    if not model:
+        return None
+    
+    prompt_str = get_agent_system_prompt('TerminalAgent', TERMINAL_PROMPT)
+    structured_system_prompt = get_structured_prompt(model, prompt_str)
 
-    agent = create_agent(
+    return create_agent(
         model,
         tools,
         system_prompt=structured_system_prompt,
         name="TerminalAgent"
     )
-else:
-    agent = None
+
+agent = None # Deprecated, use get_agent()
+
 
 async def main():
     user_message = "What are the files in my d: disk"

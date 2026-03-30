@@ -1,3 +1,11 @@
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from sqlalchemy import Column, String, JSON, DateTime, Integer
 from sqlalchemy.sql import func
 from backend.db.database import Base
@@ -15,6 +23,14 @@ class AgentConfig(Base):
     agent_type = Column(String)  # chat, code, research, etc.
     llm_config = Column(JSON)  # {model: str, api_key: str, base_url: str}
     description = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+class AgentPrompt(Base):
+    __tablename__ = "agent_prompts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_name = Column(String, unique=True, index=True)
+    system_prompt = Column(String)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
 
 class MCPServer(Base):
@@ -53,6 +69,19 @@ class agent_config_response(BaseModel):
     class Config:
         from_attributes = True
 
+class agent_prompt_base(BaseModel):
+    system_prompt: str
+
+class agent_prompt_create(agent_prompt_base):
+    agent_name: str
+
+class agent_prompt_response(agent_prompt_base):
+    agent_name: str
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
 class websocket_message(BaseModel):
     type: str # 'prompt', 'tool_start', 'tool_output', 'agent_response', 'error', 'complete', 'status', 'tasks_decomposed', 'agent_start', 'content_chunk', 'agent_error', 'tool_error'
     agent_name: Optional[str] = None
@@ -65,6 +94,7 @@ class UserRequest(BaseModel):
     session_id: str
     history: List[Dict[str, Any]] = []
     base_directory: str
+    chat_mode: str = "multiagent"
     model_config = {
         "extra": "ignore"
     }

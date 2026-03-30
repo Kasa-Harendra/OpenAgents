@@ -12,12 +12,15 @@ import send2trash
 from spire.doc import *
 from spire.doc.common import *
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from langchain.tools import tool
 from langchain.agents import create_agent
 from backend.agents.model_providers.agent_llms import get_agent_llm
-from backend.agents.prompts import FILE_SYSTEM_PROMPT, get_structured_prompt
+from backend.agents.prompts.prompts import FILE_SYSTEM_PROMPT, get_structured_prompt, get_agent_system_prompt
 
 # --- Markdown conversion tool imports ---
 import pypandoc
@@ -330,14 +333,14 @@ def write_file_tool(markdown_content: str, output_formats: Union[str, List[str]]
     # Normalize inputs to lists
     formats = [output_formats] if isinstance(output_formats, str) else output_formats
     if output_paths is None:
-        paths = [f"converted_output.{f if f != 'md' else 'markdown'}" for f in formats]
+        paths = [f"converted_output.{f if f in supported_formats else 'md'}" for f in formats]
     else:
         paths = [output_paths] if isinstance(output_paths, str) else output_paths
 
     if len(formats) != len(paths):
         return f"❌ Mismatch: Received {len(formats)} formats and {len(paths)} paths."
 
-    supported_formats = ["docx", "pdf", "html", "txt", "markdown", "md"]
+    supported_formats = ["docx", "pdf", "html", "txt", "md"]
     results = []
 
     def ensure_output_dir(path):
@@ -420,15 +423,23 @@ tools = [
     write_file_tool
 ]
 
-# Use centralized prompt helper for caching
-structured_system_prompt = get_structured_prompt(model, FILE_SYSTEM_PROMPT)
+def get_agent():
+    model = get_agent_llm('FileSystemAgent')
+    if not model:
+        return None
+    
+    prompt_str = get_agent_system_prompt('FileSystemAgent', FILE_SYSTEM_PROMPT)
+    structured_system_prompt = get_structured_prompt(model, prompt_str)
+    
+    return create_agent(
+        model,
+        tools,
+        system_prompt=structured_system_prompt,
+        name="FileSystemAgent"
+    )
 
-agent = create_agent(
-    model,
-    tools,
-    system_prompt=structured_system_prompt,
-    name="FileSystemAgent"
-)
+agent = None # Deprecated, use get_agent()
+
 
 def run_agentic_filesystem_demo():
     """

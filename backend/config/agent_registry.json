@@ -3,37 +3,19 @@
     "BrowserAgent": {
       "description": "Web automation and browser interactions for navigating pages, filling forms, and extracting data",
       "capabilities": [
-          "search - Search queries (DuckDuckGo, Google, Bing)",
-          "navigate - Navigate to URLs",
-          "go_back - Go back in browser history",
-          "wait - Wait for specified seconds",
-          "click - Click elements by their index",
-          "input - Input text into form fields",
-          "upload_file - Upload files to file inputs",
-          "scroll - Scroll the page up/down",
-          "find_text - Scroll to specific text on page",
-          "send_keys - Send special keys (Enter, Escape, etc.)",
-          "switch - Switch between browser tabs",
-          "close - Close browser tabs",
-          "extract - Extract data from webpages using LLM",
-          "screenshot - Request a screenshot in your next browser state for visual confirmation",
-          "dropdown_options - Get dropdown option values",
-          "select_dropdown - Select dropdown options",
-          "done - Complete the task (always available)"
-        ],
-      "skill_path": "backend/skills/browser-automation/SKILL.md",
+        "Web navigation, clicking, input, scrolling, tab management",
+        "Extract structured data via LLM",
+        "Wait, screenshot, send_keys, dropdown management"
+      ],
       "implemented": true
     },
     "TerminalAgent": {
       "description": "Command-line execution and system operations using PowerShell or CMD",
       "capabilities": [
         "Execute PowerShell/CMD commands",
-        "Generate Directory Trees `tree /f`",
-        "Run scripts and build tools",
-        "Install packages and dependencies",
-        "Git operations (clone, commit, push)",
-        "Cannot do File Operations and File type conversions",
-        "Process management"
+        "Run scripts, manage packages and processes",
+        "Git operations",
+        "NO file creation/deletion/conversion"
       ],
       "skill_path": "backend/skills/terminal-execution/SKILL.md",
       "implemented": true
@@ -41,55 +23,39 @@
     "FileSystemAgent": {
       "description": "Complete file and directory management including reading, writing, and converting documents (PDF, DOCX, TXT, MD)",
       "capabilities": [
-        "List files and directories",
-        "Read file contents (limit 10MB)",
-        "Can create PDFs, DOCX, TXT, HTML, MD files - can be empty or contains the content from other agents like ResearchAgent",
-        "Move, rename, and copy files or repositories",
-        "Delete files and directories safely",
-        "Search for files using patterns and explore directory trees",
-        "Cannot convert file conversions." 
+        "List, read, move, rename, copy, delete files/folders",
+        "Bulk create documents (PDF, DOCX, TXT, MD, HTML)",
+        "Regex/pattern file search",
+        "NO file format conversion"
       ],
-      "skill_path": "backend/skills/filesystem-management/SKILL.md",
       "implemented": true
     },
     "RAGAgent": {
       "description": "Knowledge retrieval from indexed documents using vector search with source citations",
       "capabilities": [
-        "Search indexed documents",
-        "Provide answers with source citations",
-        "Query vector store",
-        "Retrieve information from knowledge base",
-        "Answer questions from documentation"
+        "Query vector store for document contexts",
+        "Answer questions with source citations"
       ],
-      "skill_path": "backend/skills/knowledge-retrieval/SKILL.md",
-      "implemented": true
+      "implemented": false
     },
     "ResearchAgent": {
       "description": "Web search and information gathering from the internet",
       "capabilities": [
-        "Perform web searches",
-        "Gather information from multiple sources",
-        "Cannot do file creation and file writing",
-        "Answer questions with web research",
-        "Summarize findings",
-        "Find latest information on topics",
-        "Fact-checking"
+        "Perform web searches and fact-checking",
+        "Summarize internet findings",
+        "NO file writing or creation"
       ],
       "skill_path": null,
       "implemented": true
     },
     "IntegratorAgent": {
-      "description": "Integration with external services like Gmail, Google Drive, and Calendar via MCP",
+      "description": "Integration with external services like Gmail/Email, Google Drive, and Calendar",
       "capabilities": [
-        "Gmail operations (send, read, search emails)",
-        "Google Drive operations (upload, download, list files)",
-        "Google Calendar operations (create, list, update events)",
-        "Slack integration (future)",
-        "Send emails with attachments",
-        "Manage calendar events"
+        "Gmail / Email (draft, send, read, search)",
+        "Calendar operations and events handling",
+        "Search youtube"
       ],
-      "skill_path": "backend/skills/mcp-integration/SKILL.md",
-      "implemented": false
+      "implemented": true
     }
   }
 }

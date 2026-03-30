@@ -13,7 +13,7 @@ from langchain_community.docstore.document import Document
 import tempfile
 
 from backend.agents.model_providers.agent_llms import agent_llms
-from backend.agents.prompts import CODE_EXPLAINER_PROMPT_BASE, get_structured_prompt
+from backend.agents.prompts.prompts import CODE_EXPLAINER_PROMPT_BASE, get_structured_prompt
 
 def load_and_chunk_repo(repo_url: str, branch: str = "main", chunk_size: int = 1000, chunk_overlap: int = 100) -> List[Document]:
 	with tempfile.TemporaryDirectory() as temp_dir:

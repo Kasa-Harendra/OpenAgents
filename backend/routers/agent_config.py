@@ -1,9 +1,22 @@
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from backend.db.database import engine, Base, get_db
 from backend.models.models import (
     AgentConfig, agent_config_create, agent_config_response, websocket_message,
-    MCPServer, mcp_server_create, mcp_server_response
+    MCPServer, mcp_server_create, mcp_server_response, AgentPrompt, agent_prompt_create, agent_prompt_response
 )
-from backend.websocket_manager import manager
+from backend.agents.prompts.prompts import (
+    ORCHESTRATOR_PROMPT_BASE, FILE_SYSTEM_PROMPT, TERMINAL_PROMPT,
+    RESEARCH_PROMPT, INTEGRATOR_AGENT_PROMPT, RAG_PROMPT_BASE,
+    CODE_EXPLAINER_PROMPT_BASE, YT_PROMPT_BASE
+)
+from backend.services.websocket_manager import manager
 from backend.agent_flow import execute
 from backend.agents.model_providers.agent_llms import load_agent_llms
 
@@ -93,6 +106,28 @@ def init_db():
             if description and db_config.description != description:
                 db_config.description = description
     
+    # Initialize default prompts
+    default_prompts = {
+        "Coordinator": ORCHESTRATOR_PROMPT_BASE,
+        "FileSystemAgent": FILE_SYSTEM_PROMPT,
+        "TerminalAgent": TERMINAL_PROMPT,
+        "ResearchAgent": RESEARCH_PROMPT,
+        "IntegratorAgent": INTEGRATOR_AGENT_PROMPT,
+        "RAGAgent": RAG_PROMPT_BASE,
+        "CodeExplainerAgent": CODE_EXPLAINER_PROMPT_BASE,
+        "YTAgent": YT_PROMPT_BASE,
+        "ChatMode": "You are helpful assistant"
+    }
+
+    for p_agent_name, default_prompt in default_prompts.items():
+        db_prompt = db.query(AgentPrompt).filter(AgentPrompt.agent_name == p_agent_name).first()
+        if not db_prompt:
+            db_prompt = AgentPrompt(
+                agent_name=p_agent_name,
+                system_prompt=default_prompt
+            )
+            db.add(db_prompt)
+    
     db.commit()
     db.close()
 
@@ -127,3 +162,28 @@ def update_config(agent_name: str, config_update: agent_config_create, db: Sessi
     load_agent_llms()
     
     return db_config
+
+@router.get("/prompts", response_model=List[agent_prompt_response])
+def get_all_prompts(db: Session = Depends(get_db)):
+    return db.query(AgentPrompt).all()
+
+@router.get("/prompts/{agent_name}", response_model=agent_prompt_response)
+def get_prompt(agent_name: str, db: Session = Depends(get_db)):
+    prompt = db.query(AgentPrompt).filter(AgentPrompt.agent_name == agent_name).first()
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Agent prompt not found")
+    return prompt
+
+@router.put("/prompts/{agent_name}", response_model=agent_prompt_response)
+def update_prompt(agent_name: str, prompt_update: agent_prompt_create, db: Session = Depends(get_db)):
+    db_prompt = db.query(AgentPrompt).filter(AgentPrompt.agent_name == agent_name).first()
+    if not db_prompt:
+        db_prompt = AgentPrompt(agent_name=agent_name)
+        db.add(db_prompt)
+    
+    db_prompt.system_prompt = prompt_update.system_prompt
+    
+    db.commit()
+    db.refresh(db_prompt)
+    
+    return db_prompt

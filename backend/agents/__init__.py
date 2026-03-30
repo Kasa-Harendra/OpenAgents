@@ -1,4 +1,4 @@
-from .orchestrator_agent import OrchestratorAgent, orchestrator
+from .orchestrator_agent import orchestrator as orchestrator_agent
 from .file_system_agent import agent as file_system_agent
 from .terminal_agent import agent as terminal_agent
 from .web_search_agent import agent as web_search_agent

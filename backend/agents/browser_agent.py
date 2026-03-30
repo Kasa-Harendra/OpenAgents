@@ -6,7 +6,11 @@ from langchain.chat_models import BaseChatModel
 import asyncio
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from backend.agents.model_providers.agent_llms import get_agent_config, agent_configs
 from backend.agents.model_providers.models import AgentConfig

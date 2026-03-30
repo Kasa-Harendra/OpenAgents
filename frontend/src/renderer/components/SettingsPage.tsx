@@ -7,7 +7,10 @@ import {
   Edit2, 
   X,
   Plus,
-  Info
+  Info,
+  User,
+  LogOut,
+  FileText
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -27,17 +30,29 @@ interface AgentConfig {
   description?: string;
 }
 
+interface AgentPrompt {
+  agent_name: string;
+  system_prompt: string;
+  updated_at?: string;
+}
+
 const PROVIDERS = ['NONE', 'OLLAMA', 'OPENAI', 'GEMINI', 'ANTHROPIC', 'GROQ', 'OTHERS'];
 
 const SettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'agents' | 'mcp'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'mcp' | 'prompts' | 'account'>('agents');
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
+  const [prompts, setPrompts] = useState<AgentPrompt[]>([]);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<AgentConfig | null>(null);
+  
+  const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
+  const [promptEditForm, setPromptEditForm] = useState<AgentPrompt | null>(null);
+  
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchConfigs();
+    fetchPrompts();
   }, []);
 
   const fetchConfigs = async () => {
@@ -74,6 +89,15 @@ const SettingsPage: React.FC = () => {
       toast.error('Failed to load configurations');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPrompts = async () => {
+    try {
+      const response = await axios.get(`${BASE_URL}/prompts`);
+      setPrompts(response.data);
+    } catch (error) {
+      console.error('Failed to fetch prompts:', error);
     }
   };
 
@@ -140,6 +164,34 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleEditPrompt = (prompt: AgentPrompt) => {
+    setEditingPrompt(prompt.agent_name);
+    setPromptEditForm({ ...prompt });
+  };
+
+  const handleCancelPrompt = () => {
+    setEditingPrompt(null);
+    setPromptEditForm(null);
+  };
+
+  const handleSavePrompt = async () => {
+    if (!promptEditForm) return;
+
+    try {
+      await axios.put(`${BASE_URL}/prompts/${promptEditForm.agent_name}`, {
+        agent_name: promptEditForm.agent_name,
+        system_prompt: promptEditForm.system_prompt
+      });
+      toast.success('System prompt saved successfully');
+      setEditingPrompt(null);
+      setPromptEditForm(null);
+      fetchPrompts();
+    } catch (error) {
+      console.error('Failed to save prompt:', error);
+      toast.error('Failed to save system prompt');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden animate-fade-in">
       {/* Header */}
@@ -178,6 +230,30 @@ const SettingsPage: React.FC = () => {
         >
           <Server size={16} />
           MCP Servers
+        </button>
+        <button
+          onClick={() => setActiveTab('prompts')}
+          className={cn(
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
+            activeTab === 'prompts' 
+              ? "border-primary text-primary" 
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <FileText size={16} />
+          System Prompts
+        </button>
+        <button
+          onClick={() => setActiveTab('account')}
+          className={cn(
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
+            activeTab === 'account' 
+              ? "border-primary text-primary" 
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <User size={16} />
+          Account
         </button>
       </div>
 
@@ -327,7 +403,7 @@ const SettingsPage: React.FC = () => {
               ))
             )}
           </div>
-        ) : (
+        ) : activeTab === 'mcp' ? (
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -361,6 +437,123 @@ const SettingsPage: React.FC = () => {
                       Configuration UI in development
                     </div>
                   </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'prompts' ? (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <FileText size={20} className="text-primary" />
+                System Prompts
+              </h2>
+            </div>
+            
+            {prompts.map((prompt) => (
+              <div 
+                key={prompt.agent_name}
+                className={cn(
+                  "group relative bg-card border border-border rounded-xl p-6 transition-all",
+                  editingPrompt === prompt.agent_name ? "ring-2 ring-primary border-transparent" : "hover:border-primary/50"
+                )}
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">{prompt.agent_name}</h3>
+                  </div>
+                  {editingPrompt !== prompt.agent_name ? (
+                    <button
+                      onClick={() => handleEditPrompt(prompt)}
+                      className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                      title="Edit Prompt"
+                    >
+                      <Edit2 size={18} />
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleCancelPrompt}
+                        className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-muted-foreground hover:text-destructive"
+                        title="Cancel"
+                      >
+                        <X size={18} />
+                      </button>
+                      <button
+                        onClick={handleSavePrompt}
+                        className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary"
+                        title="Save Changes"
+                      >
+                        <Save size={18} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  {editingPrompt === prompt.agent_name ? (
+                    <textarea
+                      value={promptEditForm?.system_prompt || ''}
+                      onChange={(e) => setPromptEditForm({ ...promptEditForm!, system_prompt: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-primary outline-none transition-all h-64 font-mono leading-relaxed"
+                      placeholder="Enter system prompt..."
+                    />
+                  ) : (
+                    <div className="bg-muted/30 rounded-lg p-4 text-sm font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto custom-scrollbar border border-transparent">
+                      {prompt.system_prompt}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+              <div className="h-32 bg-gradient-to-r from-primary/10 to-primary/5 p-8 flex items-end">
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 bg-background rounded-2xl border-4 border-card shadow-xl flex items-center justify-center overflow-hidden">
+                    <User className="text-primary/40" size={40} />
+                  </div>
+                  <div className="mb-2">
+                    <h2 className="text-xl font-bold">User Profile</h2>
+                    <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-8 space-y-8">
+                <div className="grid gap-6">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-muted-foreground">Username</label>
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50">
+                      <span className="font-medium text-foreground">Google User</span>
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded uppercase">Verified</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-muted-foreground">Account Status</label>
+                    <p className="text-sm">Currently signed in with Google OAuth. Your tokens are securely stored locally.</p>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-border/50">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await axios.post(`${BASE_URL}/auth/logout`);
+                        toast.success('Logged out successfully');
+                        window.location.reload(); // Force reload to trigger AuthPopup
+                      } catch (error) {
+                        toast.error('Failed to sign out');
+                      }
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-destructive/10 text-destructive rounded-xl hover:bg-destructive hover:text-destructive-foreground transition-all font-medium"
+                  >
+                    <LogOut size={18} />
+                    Sign Out and Clear Session
+                  </button>
+                </div>
               </div>
             </div>
           </div>

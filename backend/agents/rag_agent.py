@@ -16,7 +16,7 @@ import pypandoc
 from pdf2docx import Converter
 
 from backend.agents.model_providers.agent_llms import agent_llms
-from backend.agents.prompts import RAG_PROMPT_BASE, get_structured_prompt
+from backend.agents.prompts.prompts import RAG_PROMPT_BASE, get_structured_prompt
 
 def convert_pdf_to_docx(pdf_path, docx_path):
     cv = Converter(pdf_path)

@@ -4,7 +4,7 @@ from typing import List
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from backend.agents.model_providers.agent_llms import agent_llms
-from backend.agents.prompts import YT_PROMPT_BASE, get_structured_prompt
+from backend.agents.prompts.prompts import YT_PROMPT_BASE, get_structured_prompt
 from langchain.chat_models import BaseChatModel
 from langchain.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter

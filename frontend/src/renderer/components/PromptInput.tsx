@@ -15,7 +15,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
   disabled = false 
 }) => {
   const [input, setInput] = useState('');
-  const { baseDirectory, setBaseDirectory } = useChatStore();
+  const { baseDirectory, setBaseDirectory, chatMode, setChatMode } = useChatStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -129,6 +129,17 @@ const PromptInput: React.FC<PromptInputProps> = ({
               )}
             </button>
 
+            <select
+              value={chatMode}
+              onChange={(e) => setChatMode(e.target.value as any)}
+              disabled={disabled}
+              className="bg-transparent border border-border/30 rounded-xl px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary/50 transition-colors h-10 shrink-0 cursor-pointer appearance-none text-center min-w-[110px]"
+            >
+              <option value="multiagent">Multiagent</option>
+              <option value="chat">General Chat</option>
+            </select>
+
+
             <textarea
               ref={textareaRef}
               rows={1}
@@ -137,7 +148,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
               onKeyDown={handleKeyDown}
               placeholder={baseDirectory ? `Message in ${currentDirName}...` : "Select a base directory to start..."}
               disabled={disabled}
-              className="w-full bg-transparent border-none focus:ring-0 resize-none py-2.5 px-2 min-h-[44px] max-h-[200px] overflow-y-auto text-sm leading-relaxed placeholder:text-muted-foreground/60 scrollbar-none"
+              className="w-full bg-transparent border-none resize-none py-2.5 px-2 min-h-[44px] max-h-[200px] overflow-y-auto text-sm leading-relaxed placeholder:text-muted-foreground/60 scrollbar-none"
             />
             
             <motion.button

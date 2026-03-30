@@ -11,7 +11,11 @@ This module provides an intelligent orchestrator that:
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from typing import List, Tuple, Dict, Any
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,7 +25,7 @@ import json
 import os
 
 from backend.agents.model_providers.agent_llms import get_agent_llm
-from backend.agents.prompts import ORCHESTRATOR_PROMPT_BASE, get_structured_prompt
+from backend.agents.prompts.prompts import ORCHESTRATOR_PROMPT_BASE, get_structured_prompt, get_agent_system_prompt
 
 class SubTask(BaseModel):
     """Model for a subtask in the execution plan"""
@@ -81,7 +85,8 @@ class OrchestratorAgent:
     
     def _create_system_prompt(self) -> str:
         """Create the system prompt for task decomposition"""
-        return ORCHESTRATOR_PROMPT_BASE.format(agent_registry_str=self._format_agent_registry())
+        base_prompt = get_agent_system_prompt("Coordinator", ORCHESTRATOR_PROMPT_BASE)
+        return base_prompt.format(agent_registry_str=self._format_agent_registry())
 
     def decompose_task(self, user_prompt: str, base_directory:str, history: List[Dict] = []) -> Any:
         """
@@ -185,6 +190,8 @@ class OrchestratorAgent:
             candidates.append("FileSystemAgent")
         if any(word in prompt_lower for word in ["search", "research", "find information", "web search"]):
             candidates.append("ResearchAgent")
+        if any(word in prompt_lower for word in ["mail", "drive", "calendar", "events"]):
+            candidates.append("IntegratorAgent")
         if any(word in prompt_lower for word in ["document", "knowledge", "indexed", "rag"]):
             candidates.append("RAGAgent")
 

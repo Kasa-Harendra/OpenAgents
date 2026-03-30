@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "gmail": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@shinzolabs/gmail-mcp"],
+      "env": {
+        "GMAIL_CREDENTIALS_PATH": "./backend/credentials/token.json"
+      }
+    },
+    "google-drive": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@piotr-agier/google-drive-mcp"],
+      "env": {
+        "GOOGLE_DRIVE_OAUTH_CREDENTIALS": "./backend/credentials/credentials.json",
+        "GOOGLE_DRIVE_MCP_TOKEN_PATH": "./backend/credentials/token.json"
+      }
+    },
+    "google-calendar": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@cocal/google-calendar-mcp"],
+      "env": {
+        "GOOGLE_OAUTH_CREDENTIALS": "./backend/credentials/credentials.json",
+        "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "./backend/credentials/token.json"
+      }
+    }
+  }
+}

@@ -1,15 +1,27 @@
+import os
+import sys
+
+# Add project root to path to support both backend.main and main imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from backend.db.database import engine, Base, get_db
+from backend.models.models import AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
+from backend.services.websocket_manager import manager
+from backend.agent_flow import execute
+from backend.routers.agent_config import router as config_router, init_db
+from backend.routers.auth import router as auth_router
+from backend.agents.model_providers.agent_llms import get_agent_llm
+from backend.agents.prompts.prompts import get_agent_system_prompt
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+
 import json
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-import os
-
-from backend.db.database import engine, Base, get_db
-from backend.models.models import AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
-from backend.websocket_manager import manager
-from backend.agent_flow import execute
-from backend.routers.agent_config import router as config_router, init_db
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -30,6 +42,47 @@ app.add_middleware(
 )
 
 app.include_router(config_router, tags=["config"])
+app.include_router(auth_router, tags=["auth"])
+
+async def handle_general_chat(prompt: str, history: List[Dict[str, Any]], callback):
+    model = get_agent_llm('Coordinator')
+    if not model:
+        await callback(websocket_message(type="error", content="Coordinator LLM not configured for chat."))
+        return
+        
+    system_prompt_str = get_agent_system_prompt("ChatMode", "You are helpful assistant")
+    messages = [SystemMessage(content=system_prompt_str)]
+    
+    # for msg in history:
+    #     role = msg.get("role", "")
+    #     content = msg.get("content", "")
+    #     if role == "user":
+    #         messages.append(HumanMessage(content=content))
+    #     elif role == "agent":
+    #         messages.append(AIMessage(content=content))
+            
+    messages.append(HumanMessage(content=prompt))
+    
+    try:
+        response_content = ""
+        async for chunk in model.astream(messages):
+            if chunk.content:
+                response_content += chunk.content
+                await callback(websocket_message(
+                    type="content_chunk",
+                    agent_name="Coordinator (Chat)",
+                    chunk=chunk.content
+                ))
+        
+        await callback(websocket_message(
+            type="agent_response",
+            agent_name="Coordinator (Chat)",
+            content=response_content
+        ))
+        
+        # await callback(websocket_message(type="complete", content="Chat completed."))
+    except Exception as e:
+        await callback(websocket_message(type="error", content=f"Chat error: {str(e)}"))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -49,11 +102,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 # History is available in request.history if needed for context
                 history = request.history or []
                 base_directory = request.base_directory
+                chat_mode = getattr(request, 'chat_mode', 'multiagent')
 
                 async def streaming_callback(event: websocket_message):
                     await manager.send_json_safe(event, websocket)
 
-                await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
+                if chat_mode == "chat":
+                    await handle_general_chat(prompt, history, streaming_callback)
+                else:
+                    await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
+
 
             except json.JSONDecodeError:
                 await manager.send_json_safe(websocket_message(type="error", content="Invalid JSON format"), websocket)

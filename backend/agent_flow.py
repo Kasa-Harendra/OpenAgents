@@ -1,6 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from typing import List, Dict, Any
 import asyncio
@@ -27,17 +31,20 @@ def _is_agent_config_error(error_str: str) -> bool:
     ]
     return any(kw in error_lower for kw in keywords)
 
-def _get_agent(agent_name: str) -> CompiledStateGraph[AgentState[Any], Any, _InputAgentState, _OutputAgentState[Any]]:
+async def _get_agent(agent_name: str) -> CompiledStateGraph[AgentState[Any], Any, _InputAgentState, _OutputAgentState[Any]]:
     match(agent_name):
         case "FileSystemAgent":
-            from backend.agents.file_system_agent import agent as file_system_agent
-            return file_system_agent
+            from backend.agents.file_system_agent import get_agent as get_file_system_agent
+            return get_file_system_agent()
         case "TerminalAgent":
-            from backend.agents.terminal_agent import agent as terminal_agent
-            return terminal_agent
+            from backend.agents.terminal_agent import get_agent as get_terminal_agent
+            return get_terminal_agent()
         case "ResearchAgent":
-            from backend.agents.web_search_agent import agent as web_search_agent
-            return web_search_agent
+            from backend.agents.web_search_agent import get_agent as get_web_search_agent
+            return get_web_search_agent()
+        case "IntegratorAgent":
+            from backend.agents.integrator_agent import get_agent as get_integrator_agent
+            return await get_integrator_agent()
         case _:
             from backend.agents.orchestrator_agent import orchestrator
             return orchestrator
@@ -214,7 +221,7 @@ async def execute(prompt, base_directory, history: List[Dict] = [], callback=Non
                 await callback(websocket_message(type="agent_error", content=error_msg))
             return error_msg
 
-        agent = _get_agent(agent_name)
+        agent = await _get_agent(agent_name)
         # If the agent module was imported but 'agent' is None (config missing at import)
         if agent is None:
             error_msg = f"Agent '{agent_name}' failed to initialize. Please check its configuration."
@@ -226,7 +233,7 @@ async def execute(prompt, base_directory, history: List[Dict] = [], callback=Non
         if callback:
             await callback(websocket_message(type="agent_start", agent_name=agent_name, content=sub_task))
 
-        if agent_name in ["FileSystemAgent", "TerminalAgent", "ResearchAgent"]:
+        if agent_name in ["FileSystemAgent", "TerminalAgent", "ResearchAgent", "IntegratorAgent"]:
             # Executing the sub_task by the agent with Exception Handling and Considerable Evaluation
             print(f"DEBUG: invoking {agent_name}")
             if not (await _invoke_agent(agent, processed_sub_task, context, callback)):
