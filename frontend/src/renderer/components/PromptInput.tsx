@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, FolderOpen, X } from 'lucide-react';
+import { ArrowUp, FolderOpen, X, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
@@ -15,7 +15,9 @@ const PromptInput: React.FC<PromptInputProps> = ({
   disabled = false 
 }) => {
   const [input, setInput] = useState('');
-  const { baseDirectory, setBaseDirectory, chatMode, setChatMode } = useChatStore();
+  const { activeChatId, chats, setBaseDirectory, chatMode, setChatMode, cancelExecution } = useChatStore();
+  const activeChat = chats.find(c => c.id === activeChatId);
+  const baseDirectory = activeChat?.baseDirectory;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -85,8 +87,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
         <form 
           onSubmit={handleSubmit}
           className={cn(
-            "relative flex flex-col w-full bg-card/90 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl transition-all duration-300 ring-1 ring-white/10",
-            disabled && "opacity-50 cursor-not-allowed"
+            "relative flex flex-col w-full bg-card/90 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl transition-all duration-300 ring-1 ring-white/10"
           )}
         >
           {/* Base Directory Indicator */}
@@ -151,20 +152,36 @@ const PromptInput: React.FC<PromptInputProps> = ({
               className="w-full bg-transparent border-none resize-none py-2.5 px-2 min-h-[44px] max-h-[200px] overflow-y-auto text-sm leading-relaxed placeholder:text-muted-foreground/60 scrollbar-none"
             />
             
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              type="submit"
-              disabled={!input.trim() || disabled}
-              className={cn(
-                "flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300",
-                input.trim() && baseDirectory
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
-                  : "bg-muted text-muted-foreground opacity-50"
-              )}
-            >
-              <ArrowUp size={20} />
-            </motion.button>
+            {disabled ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="button"
+                onClick={(e) => { e.preventDefault(); cancelExecution(); }}
+                className={cn(
+                  "flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300",
+                  "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20"
+                )}
+                title="Stop Execution"
+              >
+                <Square size={16} fill="currentColor" />
+              </motion.button>
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                type="submit"
+                disabled={!input.trim()}
+                className={cn(
+                  "flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300",
+                  input.trim() && baseDirectory
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
+                    : "bg-muted text-muted-foreground opacity-50"
+                )}
+              >
+                <ArrowUp size={20} />
+              </motion.button>
+            )}
           </div>
         </form>
       </div>

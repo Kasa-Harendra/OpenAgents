@@ -74,6 +74,7 @@ class agent_prompt_base(BaseModel):
 
 class agent_prompt_create(agent_prompt_base):
     agent_name: str
+    system_prompt: str
 
 class agent_prompt_response(agent_prompt_base):
     agent_name: str
@@ -84,6 +85,7 @@ class agent_prompt_response(agent_prompt_base):
 
 class websocket_message(BaseModel):
     type: str # 'prompt', 'tool_start', 'tool_output', 'agent_response', 'error', 'complete', 'status', 'tasks_decomposed', 'agent_start', 'content_chunk', 'agent_error', 'tool_error'
+    session_id: Optional[str] = None
     agent_name: Optional[str] = None
     content: Any = None
     chunk: Optional[str] = None

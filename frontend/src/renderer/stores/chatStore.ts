@@ -17,6 +17,7 @@ export interface Chat {
   createdAt: number;
   updatedAt: number;
   isTyping?: boolean;
+  baseDirectory: string | null;
 }
 
 interface ChatState {
@@ -33,8 +34,9 @@ interface ChatState {
   connect: () => void;
   disconnect: () => void;
   sendMessage: (content: string) => void;
-  baseDirectory: string | null;
+  cancelExecution: () => void;
   setBaseDirectory: (path: string | null) => void;
+  setIsTyping: (chatId: string, isTyping: boolean) => void;
   chatMode: 'multiagent' | 'chat';
   setChatMode: (mode: 'multiagent' | 'chat') => void;
 }
@@ -44,10 +46,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeChatId: null,
   socket: null,
   isConnected: false,
-  baseDirectory: null,
   chatMode: 'multiagent',
   
-  setBaseDirectory: (path) => set({ baseDirectory: path }),
+  setBaseDirectory: (path) => set((state) => ({
+    chats: state.chats.map((chat) =>
+      chat.id === state.activeChatId ? { ...chat, baseDirectory: path } : chat
+    ),
+  })),
+  setIsTyping: (chatId, isTyping) => set((state) => ({
+    chats: state.chats.map((chat) =>
+      chat.id === chatId ? { ...chat, isTyping } : chat
+    ),
+  })),
   setChatMode: (mode) => set({ chatMode: mode }),
   
   addChat: (title) => {
@@ -57,6 +67,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      baseDirectory: null,
+      isTyping: false,
     };
     set((state) => ({
       chats: [newChat, ...state.chats],
@@ -153,10 +165,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       try {
         const data = JSON.parse(event.data);
-        const { type, agent_name, content, chunk } = data;
+        const { type, agent_name, content, chunk, session_id } = data;
         
-        const currentChat = get().chats.find(c => c.id === activeChatId);
-        const lastMsg = currentChat?.messages[currentChat.messages.length - 1];
+        const targetChatId = session_id || activeChatId;
+        
+        const currentChat = get().chats.find(c => c.id === targetChatId);
+        if (!currentChat) return;
+        
+        const lastMsg = currentChat.messages[currentChat.messages.length - 1];
 
         if (type === 'agent_error') {
           // Show agent errors as toasts and don't add to chat to avoid clutter
@@ -164,6 +180,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             duration: 5000,
             position: 'top-center',
           });
+          get().setIsTyping(targetChatId, false);
           return;
         }
 
@@ -172,31 +189,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
           console.error(`Tool error in ${agent_name}:`, content);
           return;
         }
+        
+        if (type === 'error' || type === 'complete') {
+            get().setIsTyping(targetChatId, false);
+            // Optionally, we could still add normal 'error'/complete messages if needed
+            // But usually we don't display 'complete' to user unless we want a status update.
+            if (type === 'error') {
+                 addMessage(targetChatId, 'assistant', content, type, agent_name);
+            }
+            return;
+        }
 
         if (type === 'content_chunk') {
           if (lastMsg && lastMsg.role === 'assistant' && (lastMsg.type === 'agent_response' || lastMsg.type === 'content_chunk')) {
-            updateLastMessage(activeChatId, chunk, 'agent_response', true);
+            updateLastMessage(targetChatId, chunk, 'agent_response', true);
           } else {
-            addMessage(activeChatId, 'assistant', chunk, 'agent_response', agent_name);
+            addMessage(targetChatId, 'assistant', chunk, 'agent_response', agent_name);
           }
         } else if (type === 'agent_response') {
           // If we were already streaming this response, update it with the final content instead of adding a duplicate
           if (lastMsg && lastMsg.role === 'assistant' && lastMsg.agentName === agent_name && (lastMsg.type === 'agent_response' || lastMsg.type === 'content_chunk')) {
-            updateLastMessage(activeChatId, content, 'agent_response', false);
+            updateLastMessage(targetChatId, content, 'agent_response', false);
           } else {
-            addMessage(activeChatId, 'assistant', content, 'agent_response', agent_name);
+            addMessage(targetChatId, 'assistant', content, 'agent_response', agent_name);
           }
         } else if (type === 'tool_output') {
-          addMessage(activeChatId, 'assistant', content, 'tool_output', agent_name);
+          addMessage(targetChatId, 'assistant', content, 'tool_output', agent_name);
         } else if (type === 'status') {
           // Only update if the last message is already a status message, otherwise add a new one
           if (lastMsg && lastMsg.type === 'status') {
-            updateLastMessage(activeChatId, content, 'status', false);
+            updateLastMessage(targetChatId, content, 'status', false);
           } else {
-            addMessage(activeChatId, 'assistant', content, 'status', agent_name);
+            addMessage(targetChatId, 'assistant', content, 'status', agent_name);
           }
         } else {
-          addMessage(activeChatId, 'assistant', content, type, agent_name);
+          addMessage(targetChatId, 'assistant', content, type, agent_name);
         }
         
       } catch (error) {
@@ -232,6 +259,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     addMessage(activeChatId, 'user', content);
+    get().setIsTyping(activeChatId, true);
 
     try {
 
@@ -253,7 +281,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       prompt: content,
       session_id: activeChatId,
       history: history,
-      base_directory: get().baseDirectory,
+      base_directory: currentChat?.baseDirectory,
       chat_mode: get().chatMode
     };
 
@@ -261,6 +289,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
         console.error("Failed to send message:", error);
         addMessage(activeChatId, 'assistant', "Error: Failed to send message.", 'error');
+    }
+  },
+
+  cancelExecution: () => {
+    const { socket, activeChatId, setIsTyping } = get();
+    if (socket && socket.readyState === WebSocket.OPEN && activeChatId) {
+      socket.send(JSON.stringify({
+        action: 'cancel',
+        session_id: activeChatId
+      }));
+      setIsTyping(activeChatId, false);
+      toast.success("Cancellation requested...");
+    } else {
+        toast.error("Cannot cancel: socket not connected.");
     }
   }
 }));

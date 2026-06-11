@@ -44,6 +44,8 @@ app.add_middleware(
 app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
 
+active_tasks: Dict[str, asyncio.Task] = {}
+
 async def handle_general_chat(prompt: str, history: List[Dict[str, Any]], callback):
     model = get_agent_llm('Coordinator')
     if not model:
@@ -80,7 +82,7 @@ async def handle_general_chat(prompt: str, history: List[Dict[str, Any]], callba
             content=response_content
         ))
         
-        # await callback(websocket_message(type="complete", content="Chat completed."))
+        await callback(websocket_message(type="complete", content="Chat completed."))
     except Exception as e:
         await callback(websocket_message(type="error", content=f"Chat error: {str(e)}"))
 
@@ -91,8 +93,16 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             try:
+                msg_data = json.loads(data)
+                if msg_data.get("action") == "cancel":
+                    session_id = msg_data.get("session_id")
+                    if session_id in active_tasks:
+                        active_tasks[session_id].cancel()
+                        await manager.send_json_safe(websocket_message(type="status", content="Execution cancelled by user.", session_id=session_id), websocket)
+                    continue
+
                 try:
-                    request = UserRequest.model_validate_json(data)
+                    request = UserRequest.model_validate(msg_data)
                 except Exception as e:
                      await manager.send_json_safe(websocket_message(type="error", content=f"Invalid request format: {str(e)}"), websocket)
                      continue
@@ -105,12 +115,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 chat_mode = getattr(request, 'chat_mode', 'multiagent')
 
                 async def streaming_callback(event: websocket_message):
+                    event.session_id = session_id
                     await manager.send_json_safe(event, websocket)
 
-                if chat_mode == "chat":
-                    await handle_general_chat(prompt, history, streaming_callback)
-                else:
-                    await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
+                async def run_task():
+                    try:
+                        if chat_mode == "chat":
+                            await handle_general_chat(prompt, history, streaming_callback)
+                        else:
+                            await execute(prompt, base_directory=base_directory, history=history, callback=streaming_callback)
+                    except asyncio.CancelledError:
+                        print(f"Task for session {session_id} was cancelled")
+                        await streaming_callback(websocket_message(type="error", content="Task execution stopped.", session_id=session_id))
+                    finally:
+                        if session_id in active_tasks:
+                            del active_tasks[session_id]
+
+                task = asyncio.create_task(run_task())
+                active_tasks[session_id] = task
 
 
             except json.JSONDecodeError:
