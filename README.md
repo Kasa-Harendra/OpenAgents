@@ -1,4 +1,4 @@
-# OpenAgents: A Comprehensive Multi-Agent Desktop Application
+# OpenAgents: A Multi-Agent Desktop Application
 
 ## 1. Aim of the Project
 OpenAgents is a powerful native desktop application that leverages a multi-agent AI system to automate complex tasks across your system and the web. Its primary goal is to take a generalized user prompt, intelligently decompose it into actionable, sequential subtasks, and route each subtask to highly specialized AI agents. This allows for seamless execution of multifaceted workflows—from browsing the web and gathering research to managing local file systems and executing terminal commands—all while ensuring security, reliability, and real-time feedback.
@@ -7,7 +7,7 @@ OpenAgents is a powerful native desktop application that leverages a multi-agent
 The project is built on a modern, high-performance stack separated into a reactive frontend and a robust Python backend.
 
 **Frontend:**
-- **Core:** React 19, TypeScript, Vite 6
+- **Core:** React 19, TypeScript
 - **Desktop Framework:** Electron 35 (Windows and macOS support)
 - **UI & Styling:** TailwindCSS, Radix UI (accessible primitives), Framer Motion (smooth animations)
 - **State Management:** Zustand
@@ -113,7 +113,7 @@ sequenceDiagram
             Orchestrator->>Agent: _invoke_agent(sub_task, context)
         end
         
-        rect rgb(0, 255, 0)
+        rect rgb(0, 255, 255)
             Note over Agent, WebSocket: Execution & Streaming Phase
             Agent-->>WebSocket: Stream on_tool_start (status)
             Agent-->>WebSocket: Stream on_tool_end (tool_output)
