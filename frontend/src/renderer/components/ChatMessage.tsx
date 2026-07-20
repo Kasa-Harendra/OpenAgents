@@ -25,7 +25,7 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
   };
 
   return (
-    <div className="relative group my-4 rounded-lg overflow-hidden border border-border bg-zinc-950/90 dark:bg-black/40">
+    <div className="relative group my-4 w-[90%] rounded-lg overflow-hidden border border-border bg-zinc-950/90 dark:bg-black/40">
       <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
         <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
           {language || 'code'}
@@ -135,8 +135,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
       className={cn(
-        "flex w-[90%] gap-4",
-        isUser ? "flex-row-reverse" : "flex-row"
+        "flex gap-4",
+        isUser ? "w-[90%] ml-auto flex-row-reverse" : "w-full flex-row"
       )}
     >
       <div className={cn(
@@ -147,8 +147,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
       </div>
       
       <div className={cn(
-        "flex flex-col max-w-[90%]",
-        isUser ? "items-end" : "items-start"
+        "flex flex-col",
+        isUser ? "max-w-[90%] items-end" : "w-full items-start"
       )}>
         <div className={cn(
           "px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm",
@@ -156,7 +156,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             ? "bg-muted text-foreground rounded-tr-none" 
             : isError
                 ? "bg-red-500/10 text-red-600 border border-red-200 rounded-tl-none"
-                : "bg-transparent text-foreground rounded-tl-none border border-border"
+                : "bg-transparent text-foreground"
         )}>
           {typeof message.content === 'object' ? (
             <div className="whitespace-pre-wrap font-mono text-xs">

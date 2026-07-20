@@ -10,12 +10,10 @@ if project_root not in sys.path:
 from backend.db.database import engine, Base, get_db
 from backend.models.models import AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
 from backend.services.websocket_manager import manager
+from backend.chat_flow import handle_general_chat
 from backend.agent_flow import execute
 from backend.routers.agent_config import router as config_router, init_db
 from backend.routers.auth import router as auth_router
-from backend.agents.model_providers.agent_llms import get_agent_llm
-from backend.agents.prompts.prompts import get_agent_system_prompt
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 import json
 import asyncio
@@ -45,46 +43,6 @@ app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
 
 active_tasks: Dict[str, asyncio.Task] = {}
-
-async def handle_general_chat(prompt: str, history: List[Dict[str, Any]], callback):
-    model = get_agent_llm('Coordinator')
-    if not model:
-        await callback(websocket_message(type="error", content="Coordinator LLM not configured for chat."))
-        return
-        
-    system_prompt_str = get_agent_system_prompt("ChatMode", "You are helpful assistant")
-    messages = [SystemMessage(content=system_prompt_str)]
-    
-    # for msg in history:
-    #     role = msg.get("role", "")
-    #     content = msg.get("content", "")
-    #     if role == "user":
-    #         messages.append(HumanMessage(content=content))
-    #     elif role == "agent":
-    #         messages.append(AIMessage(content=content))
-            
-    messages.append(HumanMessage(content=prompt))
-    
-    try:
-        response_content = ""
-        async for chunk in model.astream(messages):
-            if chunk.content:
-                response_content += chunk.content
-                await callback(websocket_message(
-                    type="content_chunk",
-                    agent_name="Coordinator (Chat)",
-                    chunk=chunk.content
-                ))
-        
-        await callback(websocket_message(
-            type="agent_response",
-            agent_name="Coordinator (Chat)",
-            content=response_content
-        ))
-        
-        await callback(websocket_message(type="complete", content="Chat completed."))
-    except Exception as e:
-        await callback(websocket_message(type="error", content=f"Chat error: {str(e)}"))
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

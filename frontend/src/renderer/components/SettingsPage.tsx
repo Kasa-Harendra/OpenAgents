@@ -66,13 +66,15 @@ const SettingsPage: React.FC = () => {
         "ResearchAgent",
         "TerminalAgent",
         "BrowserAgent",
-        "RAGAgent",
-        "EmbeddingModel",
         "IntegratorAgent",
         "GuardianAgent"
       ];
 
-      const sortedConfigs = response.data.sort((a: AgentConfig, b: AgentConfig) => {
+      const hiddenAgents = ["RAGAgent", "YTAgent", "EmbeddingModel", "CodeExplainerAgent", "CodeExplainer", "YT", "RAG"];
+
+      const filteredConfigs = response.data.filter((a: AgentConfig) => !hiddenAgents.includes(a.agent_name));
+
+      const sortedConfigs = filteredConfigs.sort((a: AgentConfig, b: AgentConfig) => {
         const indexA = order.indexOf(a.agent_name);
         const indexB = order.indexOf(b.agent_name);
         
@@ -95,7 +97,9 @@ const SettingsPage: React.FC = () => {
   const fetchPrompts = async () => {
     try {
       const response = await axios.get(`${BASE_URL}/prompts`);
-      setPrompts(response.data);
+      const hiddenAgents = ["RAGAgent", "YTAgent", "EmbeddingModel", "CodeExplainerAgent", "CodeExplainer", "YT", "RAG"];
+      const filteredPrompts = response.data.filter((p: AgentPrompt) => !hiddenAgents.includes(p.agent_name));
+      setPrompts(filteredPrompts);
     } catch (error) {
       console.error('Failed to fetch prompts:', error);
     }

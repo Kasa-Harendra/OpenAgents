@@ -7,7 +7,7 @@ import PromptInput from '@/components/PromptInput';
 import { Sparkles } from 'lucide-react'; // Assuming Sparkles icon is from lucide-react
 
 const ChatWindow: React.FC = () => {
-  const { chats, activeChatId, connect, disconnect, sendMessage, isConnected, updateChatTitle } = useChatStore();
+  const { chats, activeChatId, connect, disconnect, sendMessage, isConnected, updateChatTitle, addChat } = useChatStore();
   const activeChat = chats.find((c) => c.id === activeChatId);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +37,13 @@ const ChatWindow: React.FC = () => {
     sendMessage(content);
   };
 
+  const handleInitialSend = (content: string) => {
+    addChat("New Chat");
+    setTimeout(() => {
+        useChatStore.getState().sendMessage(content);
+    }, 100);
+  };
+
   if (!activeChatId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-full p-4 text-center space-y-6">
@@ -49,13 +56,11 @@ const ChatWindow: React.FC = () => {
           <p className="text-muted-foreground">Start a new conversation or select one from the sidebar.</p>
         </motion.div>
         <div className="w-full max-w-2xl pt-4">
-          <PromptInput onSend={() => {}} disabled={true}/>
+          <PromptInput onSend={handleInitialSend} disabled={false} />
         </div>
       </div>
     );
   }
-
-
 
   const handleTitleClick = () => {
     if (activeChat) {
