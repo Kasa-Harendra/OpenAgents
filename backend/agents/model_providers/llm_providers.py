@@ -1,5 +1,4 @@
-from langchain.chat_models import BaseChatModel
-from langchain_community.chat_models import ChatAnthropic    
+from langchain.chat_models import BaseChatModel 
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic

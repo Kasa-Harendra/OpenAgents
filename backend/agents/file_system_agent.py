@@ -9,8 +9,6 @@ import pathlib
 from datetime import datetime
 from typing import List, Optional, Union, Dict
 import send2trash
-from spire.doc import *
-from spire.doc.common import *
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))

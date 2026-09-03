@@ -13,3 +13,8 @@ browser-use
 playwright
 python-dotenv
 httpx
+send2trash
+ddgs
+markdown-pdf
+markdown2
+pypandoc

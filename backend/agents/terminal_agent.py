@@ -1,5 +1,7 @@
+from platform import platform
 import sys
 import os
+import platform
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
@@ -32,6 +34,26 @@ def run_windows_command(commands: list):
         results.append(output)
     return "\n".join(results)
 
+@tool
+def run_linux_command(commands: list):
+    """
+    Executes one or more Linux/MacOS shell commands and returns their combined output.
+
+    - Use `pip3` for python 
+    """
+    print(commands)
+    results = []
+    for cmd in commands:
+        try:
+            completed = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            output = completed.stdout + completed.stderr
+            print(output)
+        except Exception as e:
+            output = str(e)
+        results.append(output)
+    return "\n".join(results)
+
+
 def read_file(file_name: str): 
     """
     Reads the contents of a file and returns it as a string.
@@ -39,7 +61,10 @@ def read_file(file_name: str):
     with open(file_name, 'r') as f:
         return f.read()
 
-tools = [run_windows_command, read_file]
+if platform.system() == "Windows":
+    tools = [run_windows_command, read_file]
+else:
+    tools = [run_linux_command, read_file]
 
 def get_agent():
     model = get_agent_llm('TerminalAgent')
@@ -63,7 +88,7 @@ async def main():
     user_message = "What are the files in my d: disk"
     result = await agent.ainvoke({
         "messages": [
-            ("system", system_prompt),
+            ("system", get_structured_prompt()),
             ("user", user_message)
         ]
     })
