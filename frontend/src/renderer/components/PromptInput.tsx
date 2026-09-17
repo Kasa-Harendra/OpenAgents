@@ -55,10 +55,10 @@ const PromptInput: React.FC<PromptInputProps> = ({
     try {
       console.log('PromptInput: Requesting directory selection...');
       // @ts-ignore - electron is exposed via preload
-      if (!window.electron || !window.electron.selectDirectory) {
+      if (!(window as any).electron || !(window as any).electron.selectDirectory) {
           throw new Error("Electron API 'selectDirectory' is not available. Please restart the app.");
       }
-      const path = await window.electron.selectDirectory();
+      const path = await (window as any).electron.selectDirectory();
       console.log('PromptInput: Selected path:', path);
       if (path) {
         setBaseDirectory(path);
@@ -106,6 +106,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                     type="button"
                     onClick={() => setBaseDirectory(null)}
                     className="hover:text-foreground transition-colors ml-1"
+                    aria-label="Clear base directory"
                   >
                     <X size={10} />
                   </button>
@@ -123,6 +124,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                 baseDirectory ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
               )}
               title="Select Base Directory"
+              aria-label="Select Base Directory"
             >
               <FolderOpen size={20} />
               {!baseDirectory && (
@@ -163,6 +165,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                   "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20"
                 )}
                 title="Stop Execution"
+                aria-label="Stop Execution"
               >
                 <Square size={16} fill="currentColor" />
               </motion.button>
@@ -178,6 +181,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                     ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
                     : "bg-muted text-muted-foreground opacity-50"
                 )}
+                aria-label="Send message"
               >
                 <ArrowUp size={20} />
               </motion.button>
