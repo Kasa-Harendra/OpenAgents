@@ -100,15 +100,18 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
         </div>
         
         <div className="flex flex-col max-w-[90%] w-full">
-            <div 
-                className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors"
+            <button
+                type="button"
+                className="flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 onClick={() => setIsExpanded(!isExpanded)}
+                aria-expanded={isExpanded}
+                aria-label={`Toggle ${message.agentName || 'System'} ${message.type?.replace('_', ' ')} details`}
             >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {message.agentName || 'System'} {message.type?.replace('_', ' ')}
                 </span>
-            </div>
+            </button>
 
             <AnimatePresence>
                 {isExpanded && (
