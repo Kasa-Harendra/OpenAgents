@@ -13,6 +13,7 @@ from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langchain.tools import tool
 import subprocess
+import shlex
 
 from backend.agents.model_providers.agent_llms import get_agent_llm
 from backend.agents.prompts.prompts import TERMINAL_PROMPT, get_structured_prompt, get_agent_system_prompt
@@ -26,7 +27,9 @@ def run_windows_command(commands: list):
     results = []
     for cmd in commands:
         try:
-            completed = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if isinstance(cmd, str):
+                cmd = shlex.split(cmd, posix=False)
+            completed = subprocess.run(cmd, shell=False, capture_output=True, text=True)
             output = completed.stdout + completed.stderr
             print(output)
         except Exception as e:
@@ -45,7 +48,9 @@ def run_linux_command(commands: list):
     results = []
     for cmd in commands:
         try:
-            completed = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if isinstance(cmd, str):
+                cmd = shlex.split(cmd)
+            completed = subprocess.run(cmd, shell=False, capture_output=True, text=True)
             output = completed.stdout + completed.stderr
             print(output)
         except Exception as e:
