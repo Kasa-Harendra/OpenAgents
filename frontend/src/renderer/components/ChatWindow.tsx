@@ -4,7 +4,6 @@ import { useChatStore } from '../stores/chatStore';
 import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
-import { Sparkles } from 'lucide-react'; // Assuming Sparkles icon is from lucide-react
 
 const ChatWindow: React.FC = () => {
   const { chats, activeChatId, connect, disconnect, sendMessage, isConnected, updateChatTitle, addChat } = useChatStore();

@@ -1,0 +1,3 @@
+## 2024-05-18 - Improve accessibility for visually hidden interactive elements
+**Learning:** Elements that are visually hidden until hovered (e.g., using `opacity-0 group-hover:opacity-100`) must have explicit `focus-visible:opacity-100` classes. Otherwise, keyboard users tabbing through the interface will focus on an invisible element and have no idea where they are or what the element does. ARIA labels are also crucial for screen readers in these scenarios.
+**Action:** Always ensure interactive elements that rely on hover for visibility also become visible on focus (`focus-visible`), and include proper ARIA attributes like `aria-label` and `aria-expanded`.

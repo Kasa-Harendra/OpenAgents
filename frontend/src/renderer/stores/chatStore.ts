@@ -60,10 +60,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   })),
   setChatMode: (mode) => set({ chatMode: mode }),
   
-  addChat: (title) => {
+  addChat: (title?: string) => {
     const newChat: Chat = {
       id: crypto.randomUUID(),
-      title: 'New Chat',
+      title: title || 'New Chat',
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),

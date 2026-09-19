@@ -55,10 +55,10 @@ const PromptInput: React.FC<PromptInputProps> = ({
     try {
       console.log('PromptInput: Requesting directory selection...');
       // @ts-ignore - electron is exposed via preload
-      if (!window.electron || !window.electron.selectDirectory) {
+      if (!(window as any).electron || !(window as any).electron.selectDirectory) {
           throw new Error("Electron API 'selectDirectory' is not available. Please restart the app.");
       }
-      const path = await window.electron.selectDirectory();
+      const path = await (window as any).electron.selectDirectory();
       console.log('PromptInput: Selected path:', path);
       if (path) {
         setBaseDirectory(path);
