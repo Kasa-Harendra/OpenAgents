@@ -17,6 +17,7 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({ isCollapsed }) => {
         "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover text-muted-foreground hover:text-foreground transition-all",
         isCollapsed ? "justify-center" : ""
       )}
+      aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
       title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
     >
       {theme === 'light' ? (
