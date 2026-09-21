@@ -18,6 +18,7 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({ isCollapsed }) => {
         isCollapsed ? "justify-center" : ""
       )}
       title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+      aria-label={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
     >
       {theme === 'light' ? (
         <Moon size={18} />

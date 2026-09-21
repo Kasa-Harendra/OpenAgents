@@ -106,6 +106,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                     type="button"
                     onClick={() => setBaseDirectory(null)}
                     className="hover:text-foreground transition-colors ml-1"
+                    aria-label="Clear base directory"
                   >
                     <X size={10} />
                   </button>
@@ -123,6 +124,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                 baseDirectory ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
               )}
               title="Select Base Directory"
+              aria-label="Select Base Directory"
             >
               <FolderOpen size={20} />
               {!baseDirectory && (
@@ -135,6 +137,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
               onChange={(e) => setChatMode(e.target.value as any)}
               disabled={disabled}
               className="bg-transparent border border-border/30 rounded-xl px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary/50 transition-colors h-10 shrink-0 cursor-pointer appearance-none text-center min-w-[110px]"
+              aria-label="Select chat mode"
             >
               <option value="multiagent">Multiagent</option>
               <option value="chat">General Chat</option>
@@ -150,6 +153,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
               placeholder={baseDirectory ? `Message in ${currentDirName}...` : "Select a base directory to start..."}
               disabled={disabled}
               className="w-full bg-transparent border-none resize-none py-2.5 px-2 min-h-[44px] max-h-[200px] overflow-y-auto text-sm leading-relaxed placeholder:text-muted-foreground/60 scrollbar-none"
+              aria-label="Message input"
             />
             
             {disabled ? (
@@ -163,6 +167,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                   "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20"
                 )}
                 title="Stop Execution"
+                aria-label="Stop Execution"
               >
                 <Square size={16} fill="currentColor" />
               </motion.button>
@@ -178,6 +183,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                     ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
                     : "bg-muted text-muted-foreground opacity-50"
                 )}
+                aria-label="Send message"
               >
                 <ArrowUp size={20} />
               </motion.button>

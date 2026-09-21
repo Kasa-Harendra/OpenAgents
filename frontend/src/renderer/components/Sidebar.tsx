@@ -50,6 +50,7 @@ const Sidebar: React.FC = () => {
             isCollapsed ? "" : "ml-auto"
           )}
           title="New Chat"
+          aria-label="New Chat"
         >
           <SquarePen size={20} className="text-secondary-foreground" />
         </button>
@@ -75,6 +76,7 @@ const Sidebar: React.FC = () => {
                   : "hover:bg-hover text-muted-foreground hover:text-foreground",
                 isCollapsed ? "justify-center" : ""
               )}
+              aria-label={`Chat: ${chat.title}`}
             >
               <MessageSquare size={18} className="flex-shrink-0" />
               {!isCollapsed && (
@@ -100,6 +102,7 @@ const Sidebar: React.FC = () => {
               : "text-muted-foreground hover:text-foreground",
             isCollapsed ? "justify-center" : ""
           )}
+          aria-label="Settings"
         >
           <Settings size={18} />
           {!isCollapsed && <span className="text-sm font-medium">Settings</span>}
@@ -127,6 +130,7 @@ const Sidebar: React.FC = () => {
           "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-50",
           "hover:bg-muted"
         )}
+        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
