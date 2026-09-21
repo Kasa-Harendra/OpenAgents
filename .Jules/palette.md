@@ -1,0 +1,1 @@
+## 2024-05-24 - Add ARIA Labels to Icon-Only Buttons\n**Learning:** The prompt input and sidebar components heavily relied on icon-only buttons for critical actions (like selecting base directory, expanding sidebar, etc.) without accessible text.\n**Action:** Always ensure any icon-only button uses an `aria-label` describing its action to support screen readers.
