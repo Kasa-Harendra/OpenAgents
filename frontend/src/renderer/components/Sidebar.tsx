@@ -124,7 +124,7 @@ const Sidebar: React.FC = () => {
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className={cn(
-          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-50",
+          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity z-50",
           "hover:bg-muted"
         )}
         aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
