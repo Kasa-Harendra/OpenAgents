@@ -10,8 +10,8 @@ def test_search_files_happy_path(mocker):
     result = search_files_tool.invoke({"pattern": "*.txt", "path": "fake/path"})
 
     assert "✅ Found 2 results:" in result
-    assert "- fake/path/file1.txt" in result
-    assert "- fake/path/file2.txt" in result
+    assert f"- {pathlib.Path('fake/path/file1.txt')}" in result
+    assert f"- {pathlib.Path('fake/path/file2.txt')}" in result
 
 def test_search_files_no_files_found(mocker):
     mock_rglob = mocker.patch("pathlib.Path.rglob")
