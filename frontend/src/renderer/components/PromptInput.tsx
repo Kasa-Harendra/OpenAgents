@@ -54,11 +54,11 @@ const PromptInput: React.FC<PromptInputProps> = ({
   const handleSelectDirectory = async () => {
     try {
       console.log('PromptInput: Requesting directory selection...');
-      // @ts-ignore - electron is exposed via preload
-      if (!window.electron || !window.electron.selectDirectory) {
+      // @ts-ignore
+      if (!(window as any).electron || !(window as any).electron.selectDirectory) {
           throw new Error("Electron API 'selectDirectory' is not available. Please restart the app.");
       }
-      const path = await window.electron.selectDirectory();
+      const path = await (window as any).electron.selectDirectory();
       console.log('PromptInput: Selected path:', path);
       if (path) {
         setBaseDirectory(path);
@@ -102,9 +102,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-medium uppercase tracking-wider">
                   <FolderOpen size={12} />
                   <span className="max-w-[300px] truncate" title={baseDirectory}>{baseDirectory}</span>
-                  <button 
-                    type="button"
-                    onClick={() => setBaseDirectory(null)}
+                  <button type="button" aria-label="Clear base directory" onClick={() => setBaseDirectory(null)}
                     className="hover:text-foreground transition-colors ml-1"
                   >
                     <X size={10} />
@@ -122,7 +120,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                 "flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-200 hover:bg-muted group relative",
                 baseDirectory ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
               )}
-              title="Select Base Directory"
+              title="Select Base Directory" aria-label="Select Base Directory"
             >
               <FolderOpen size={20} />
               {!baseDirectory && (
@@ -162,7 +160,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                   "flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300",
                   "bg-destructive text-destructive-foreground shadow-lg shadow-destructive/20"
                 )}
-                title="Stop Execution"
+                title="Stop Execution" aria-label="Stop Execution"
               >
                 <Square size={16} fill="currentColor" />
               </motion.button>
@@ -178,6 +176,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                     ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" 
                     : "bg-muted text-muted-foreground opacity-50"
                 )}
+                aria-label="Send Message"
               >
                 <ArrowUp size={20} />
               </motion.button>
