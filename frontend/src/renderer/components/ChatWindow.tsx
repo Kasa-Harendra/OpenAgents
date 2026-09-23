@@ -117,10 +117,20 @@ const ChatWindow: React.FC = () => {
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 scroll-smooth pb-32" ref={scrollRef}>
         <div className="max-w-5xl mx-auto space-y-6">
           {activeChat?.messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-              <h2 className="text-2xl font-medium">New Conversation</h2>
-              <p className="text-sm text-muted-foreground">Ask anything to get started.</p>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="flex flex-col items-center justify-center py-32 text-center space-y-6"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mb-2 ring-1 ring-border/50 shadow-inner">
+                <Sparkles className="w-8 h-8 text-primary opacity-80" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-medium tracking-tight">New Conversation</h2>
+                <p className="text-base text-muted-foreground max-w-sm mx-auto">Ask anything to get started. I'm ready to assist you.</p>
+              </div>
+            </motion.div>
           ) : (
             (() => {
               type GroupItem = 

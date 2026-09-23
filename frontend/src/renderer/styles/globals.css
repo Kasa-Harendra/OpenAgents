@@ -2,60 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme variables - matching OpenWork design */
+/* Theme variables - matching premium design */
 :root {
-  /* ChatGPT-style Light Mode */
-  --background: 0 0% 100%;
-  --foreground: 222.2 47.4% 11.2%;
+  /* Light Mode */
+  --background: 0 0% 98%;
+  --foreground: 240 10% 3.9%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 47.4% 11.2%;
+  --card-foreground: 240 10% 3.9%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 47.4% 11.2%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 240 5.9% 10%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
   --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 240 10% 3.9%;
   --radius: 0.75rem;
 
-  --sidebar-background: 0 0% 98%;
-  --sidebar-foreground: 222.2 47.4% 11.2%;
-  --sidebar-border: 214.3 31.8% 91.4%;
+  --sidebar-background: 0 0% 96%;
+  --sidebar-foreground: 240 10% 3.9%;
+  --sidebar-border: 240 5.9% 90%;
 }
 
 .dark {
-  /* ChatGPT-style Dark Mode (Gray Palette) */
-  --background: 0 0% 12%; /* Dark gray background */
+  /* Dark Mode (Off-black tinted) */
+  --background: 240 10% 4%; 
   --foreground: 0 0% 98%;
-  --card: 0 0% 18%; /* Slightly lighter gray for cards */
+  --card: 240 10% 6%;
   --card-foreground: 0 0% 98%;
-  --popover: 0 0% 18%;
+  --popover: 240 10% 6%;
   --popover-foreground: 0 0% 98%;
   --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 25%; /* Lighter gray for secondary elements */
+  --primary-foreground: 240 5.9% 10%;
+  --secondary: 240 4% 16%;
   --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 25%;
-  --muted-foreground: 0 0% 65%;
-  --accent: 0 0% 25%;
+  --muted: 240 4% 16%;
+  --muted-foreground: 240 5% 65%;
+  --accent: 240 4% 16%;
   --accent-foreground: 0 0% 98%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 25%;
-  --input: 0 0% 25%;
-  --ring: 0 0% 83%;
+  --border: 240 4% 16%;
+  --input: 240 4% 16%;
+  --ring: 240 5% 83%;
 
-  --sidebar-background: 0 0% 10%; /* Slightly darker than main background */
+  --sidebar-background: 240 10% 5%;
   --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 20%;
+  --sidebar-border: 240 4% 12%;
 }
 
 /* Custom scrollbar */
@@ -92,6 +92,25 @@
   outline-offset: 2px;
 }
 
+/* Premium utilities */
+@layer utilities {
+  .glass {
+    @apply bg-background/70 backdrop-blur-xl border border-white/10 dark:border-white/5 shadow-sm;
+  }
+  .noise-bg {
+    position: relative;
+  }
+  .noise-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+}
+
 /* Base styles */
 @layer base {
   html {
@@ -105,5 +124,9 @@
   button,
   [role="button"] {
     @apply select-none;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-medium tracking-tight;
   }
 }

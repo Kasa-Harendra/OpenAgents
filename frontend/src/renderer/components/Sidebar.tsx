@@ -56,32 +56,46 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* Middle Section - Chat History */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
         <AnimatePresence initial={false}>
-          {chats.map((chat) => (
+          {chats.map((chat) => {
+            const isActive = activeChatId === chat.id && location.pathname === "/";
+            return (
             <motion.button
               key={chat.id}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
+              whileHover={{ x: 2 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => {
                 setActiveChat(chat.id);
                 navigate("/");
               }}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all group/item",
-                activeChatId === chat.id && location.pathname === "/"
-                  ? "bg-secondary text-secondary-foreground" 
-                  : "hover:bg-hover text-muted-foreground hover:text-foreground",
+                "relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group/item",
+                isActive
+                  ? "text-foreground" 
+                  : "text-muted-foreground hover:text-foreground",
                 isCollapsed ? "justify-center" : ""
               )}
             >
-              <MessageSquare size={18} className="flex-shrink-0" />
-              {!isCollapsed && (
-                <span className="text-sm truncate text-left">{chat.title}</span>
+              {isActive && (
+                <motion.div 
+                  layoutId="activeChatIndicator"
+                  className="absolute inset-0 bg-secondary rounded-xl z-0"
+                  initial={false}
+                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                />
               )}
+              <div className="relative z-10 flex items-center gap-3 w-full">
+                <MessageSquare size={18} className="flex-shrink-0" />
+                {!isCollapsed && (
+                  <span className="text-sm font-medium truncate text-left w-full">{chat.title}</span>
+                )}
+              </div>
             </motion.button>
-          ))}
+          )})}
         </AnimatePresence>
       </div>
 

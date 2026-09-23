@@ -87,7 +87,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
         <form 
           onSubmit={handleSubmit}
           className={cn(
-            "relative flex flex-col w-full bg-card/90 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl transition-all duration-300 ring-1 ring-white/10"
+            "relative flex flex-col w-full glass rounded-3xl transition-all duration-300 ring-1 ring-white/5"
           )}
         >
           {/* Base Directory Indicator */}
