@@ -295,8 +295,9 @@ const SettingsPage: React.FC = () => {
                     {editingAgent !== config.agent_name ? (
                       <button
                         onClick={() => handleEdit(config)}
-                        className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                        className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                         title="Edit Configuration"
+                        aria-label="Edit Configuration"
                       >
                         <Edit2 size={18} />
                       </button>
@@ -304,15 +305,17 @@ const SettingsPage: React.FC = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={handleCancel}
-                          className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-muted-foreground hover:text-destructive"
+                          className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                           title="Cancel"
+                          aria-label="Cancel editing"
                         >
                           <X size={18} />
                         </button>
                         <button
                           onClick={handleSave}
-                          className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary"
+                          className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                           title="Save Changes"
+                          aria-label="Save Configuration"
                         >
                           <Save size={18} />
                         </button>
@@ -468,8 +471,9 @@ const SettingsPage: React.FC = () => {
                   {editingPrompt !== prompt.agent_name ? (
                     <button
                       onClick={() => handleEditPrompt(prompt)}
-                      className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                      className="p-2 hover:bg-muted rounded-lg transition-colors text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       title="Edit Prompt"
+                      aria-label="Edit Prompt"
                     >
                       <Edit2 size={18} />
                     </button>
@@ -477,15 +481,17 @@ const SettingsPage: React.FC = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={handleCancelPrompt}
-                        className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-muted-foreground hover:text-destructive"
+                        className="p-2 hover:bg-destructive/10 rounded-lg transition-colors text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                         title="Cancel"
+                        aria-label="Cancel editing prompt"
                       >
                         <X size={18} />
                       </button>
                       <button
                         onClick={handleSavePrompt}
-                        className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary"
+                        className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                         title="Save Changes"
+                        aria-label="Save Prompt"
                       >
                         <Save size={18} />
                       </button>
