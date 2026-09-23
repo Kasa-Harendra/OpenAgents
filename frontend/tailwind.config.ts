@@ -51,7 +51,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          'Inter',
+          'Cabinet Grotesk',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
@@ -61,7 +61,7 @@ const config: Config = {
           'sans-serif',
         ],
         display: [
-          'Outfit',
+          'Cabinet Grotesk',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',

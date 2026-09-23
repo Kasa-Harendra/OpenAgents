@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../stores/chatStore';
 import { cn } from '@/lib/utils';
@@ -10,6 +10,8 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 
 interface ChatMessageProps {
   message: Message;
@@ -63,6 +65,16 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';
   const [isExpanded, setIsExpanded] = useState(false);
+  const messageRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    if (messageRef.current) {
+      gsap.fromTo(messageRef.current, 
+        { opacity: 0.1, x: isUser ? 30 : -30 },
+        { opacity: 1, x: 0, duration: 1, ease: "power3.out" }
+      );
+    }
+  }, { scope: messageRef });
 
   // Determine icon and color based on agentName or message type
   const getAgentIcon = () => {
@@ -130,12 +142,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+    <div
+      ref={messageRef}
       className={cn(
-        "flex gap-4",
+        "flex gap-4 opacity-10",
         isUser ? "w-[90%] ml-auto flex-row-reverse" : "w-full flex-row"
       )}
     >
@@ -205,7 +215,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

@@ -4,7 +4,47 @@ import { useChatStore } from '../stores/chatStore';
 import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
+import { Sparkles } from 'lucide-react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 
+const EmptyState = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    gsap.from(containerRef.current, {
+      opacity: 0,
+      scale: 0.95,
+      duration: 1.2,
+      ease: "expo.out"
+    });
+    
+    gsap.to(iconRef.current, {
+      y: -20,
+      duration: 2.5,
+      repeat: -1,
+      yoyo: true,
+      ease: "sine.inOut"
+    });
+  }, { scope: containerRef });
+
+  return (
+    <div ref={containerRef} className="flex flex-col items-center justify-center py-40 text-center space-y-8 relative w-full h-[500px] rounded-3xl overflow-hidden bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-secondary/60 via-background/10 to-background">
+      <div ref={iconRef} className="w-20 h-20 rounded-3xl bg-secondary/80 flex items-center justify-center mb-4 ring-1 ring-border/50 shadow-inner backdrop-blur-xl z-10">
+        <Sparkles className="w-10 h-10 text-primary opacity-90" />
+      </div>
+      <div className="space-y-4 max-w-4xl px-4 z-10">
+        <h2 className="text-[clamp(3rem,5vw,5rem)] leading-[1.05] font-display font-semibold tracking-tight text-balance text-foreground">
+          How can I help you today?
+        </h2>
+        <p className="text-lg md:text-xl text-muted-foreground max-w-lg mx-auto font-sans font-light">
+          Ask anything to get started. I'm ready to assist you.
+        </p>
+      </div>
+    </div>
+  );
+};
 
 const ChatWindow: React.FC = () => {
   const { chats, activeChatId, connect, disconnect, sendMessage, isConnected, updateChatTitle, addChat } = useChatStore();
@@ -86,7 +126,7 @@ const ChatWindow: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full relative">
-      <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-card/30 backdrop-blur-sm shrink-0">
+      <div className="px-6 py-4 flex justify-between items-center bg-card/30 backdrop-blur-sm shrink-0">
         <div className="flex-1 mr-4">
             {isEditingTitle ? (
                 <input
@@ -117,20 +157,7 @@ const ChatWindow: React.FC = () => {
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 scroll-smooth pb-32" ref={scrollRef}>
         <div className="max-w-5xl mx-auto space-y-6">
           {activeChat?.messages.length === 0 ? (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="flex flex-col items-center justify-center py-32 text-center space-y-6"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mb-2 ring-1 ring-border/50 shadow-inner">
-                <Sparkles className="w-8 h-8 text-primary opacity-80" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-3xl font-medium tracking-tight">New Conversation</h2>
-                <p className="text-base text-muted-foreground max-w-sm mx-auto">Ask anything to get started. I'm ready to assist you.</p>
-              </div>
-            </motion.div>
+            <EmptyState />
           ) : (
             (() => {
               type GroupItem = 

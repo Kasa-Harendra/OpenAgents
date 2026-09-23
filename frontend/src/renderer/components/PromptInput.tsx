@@ -97,7 +97,7 @@ const PromptInput: React.FC<PromptInputProps> = ({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="flex items-center gap-2 px-4 py-2 border-b border-border/30"
+                className="flex items-center gap-2 px-4 py-2"
               >
                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-[10px] font-medium uppercase tracking-wider">
                   <FolderOpen size={12} />

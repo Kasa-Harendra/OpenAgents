@@ -11,8 +11,8 @@ import {
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
 import ThemeToggle from '@/components/ThemeToggle';
-
 import { useNavigate, useLocation } from 'react-router-dom';
+import gsap from 'gsap';
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -28,7 +28,7 @@ const Sidebar: React.FC = () => {
         transition: { duration: 0.2, ease: "easeInOut" }
       }}
       className={cn(
-        "relative flex flex-col h-full bg-sidebar border-r border-sidebar-border group z-40",
+        "relative flex flex-col h-full bg-sidebar group z-40",
         isCollapsed ? "items-center" : ""
       )}
     >
@@ -66,7 +66,12 @@ const Sidebar: React.FC = () => {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              whileHover={{ x: 2 }}
+              onMouseEnter={(e) => {
+                gsap.to(e.currentTarget, { scale: 1.02, x: 4, duration: 0.5, ease: "power3.out" });
+              }}
+              onMouseLeave={(e) => {
+                gsap.to(e.currentTarget, { scale: 1, x: 0, duration: 0.5, ease: "power3.out" });
+              }}
               whileTap={{ scale: 0.98 }}
               onClick={() => {
                 setActiveChat(chat.id);
@@ -100,7 +105,7 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* Bottom Section */}
-      <div className="p-2 border-t border-sidebar-border space-y-1">
+      <div className="p-2 space-y-1">
         <div className={cn("flex items-center", isCollapsed ? "justify-center" : "gap-2")}>
           <ThemeToggle isCollapsed={isCollapsed} />
         </div>
@@ -138,7 +143,7 @@ const Sidebar: React.FC = () => {
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className={cn(
-          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity z-50",
+          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity z-50",
           "hover:bg-muted"
         )}
         aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
