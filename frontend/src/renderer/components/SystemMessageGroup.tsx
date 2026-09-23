@@ -16,9 +16,12 @@ export const SystemMessageGroup: React.FC<SystemMessageGroupProps> = ({ messages
 
   return (
     <div className="border border-border/40 rounded-lg bg-card/50 overflow-hidden my-2">
-        <div 
-            className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/40 transition-colors"
+        <button
+            type="button"
+            className="w-full flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             onClick={() => setIsOpen(!isOpen)}
+            aria-expanded={isOpen}
+            aria-label={`System Activity (${messages.length} steps)`}
         >
             <div className="p-1.5 rounded-md bg-muted text-muted-foreground">
                 <Activity size={14} />
@@ -28,7 +31,7 @@ export const SystemMessageGroup: React.FC<SystemMessageGroupProps> = ({ messages
             <span className="text-xs font-medium text-muted-foreground">
                 System Activity ({messages.length} steps)
             </span>
-        </div>
+        </button>
         
         <AnimatePresence>
             {isOpen && (
