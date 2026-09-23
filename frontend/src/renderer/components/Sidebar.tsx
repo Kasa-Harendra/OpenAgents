@@ -49,7 +49,7 @@ const Sidebar: React.FC = () => {
             "p-2 hover:bg-hover rounded-lg transition-all active:scale-95",
             isCollapsed ? "" : "ml-auto"
           )}
-          title="New Chat"
+          title="New Chat" aria-label="New Chat"
         >
           <SquarePen size={20} className="text-secondary-foreground" />
         </button>
@@ -138,9 +138,10 @@ const Sidebar: React.FC = () => {
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className={cn(
-          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-50",
+          "absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-background border border-border rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity z-50",
           "hover:bg-muted"
         )}
+        aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
       >
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
