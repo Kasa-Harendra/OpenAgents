@@ -5,3 +5,6 @@
 ## 2024-05-25 - Use Native Buttons for Collapsible Headers
 **Learning:** Found that custom interactive components (like collapsible headers for system messages and chat details) were built using `div` tags with `onClick` handlers. This prevents proper keyboard navigation (tabbing) and lacks native accessibility semantics, making it difficult for screen reader users to understand the component's state.
 **Action:** Always use native `<button type="button">` elements for interactive elements, and include `aria-expanded` and clear `focus-visible` styles to ensure full keyboard and screen reader accessibility.
+## 2024-05-15 - Chat Title Accessibility
+**Learning:** Using `<h2>` with an `onClick` for chat titles is a common but inaccessible pattern; replacing it with an `<h2>` containing a native `<button>` preserves document structure while adding proper keyboard focus, interaction semantics, and hover/focus styles.
+**Action:** Use nested `<button>` inside heading tags for clickable titles, and always use `@testing-library/jest-dom/vitest` in setup scripts to ensure TS compatibility in vitest.
