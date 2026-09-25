@@ -42,6 +42,7 @@ def provide_llm(
                 case "ollama":
                     model = ChatOllama(
                         model=model_name,
+                        num_ctx=4096,
                         **({"base_url": base_url} if base_url else {})
                     )
                 case "groq":

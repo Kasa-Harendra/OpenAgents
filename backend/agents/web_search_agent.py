@@ -11,23 +11,12 @@ from langchain.tools import tool
 from langchain.agents import create_agent
 import os
 
+from backend.agents.toolkits.web_search_toolkit import WebSearchToolkit
 from backend.agents.model_providers.agent_llms import get_agent_llm
 from backend.agents.prompts.prompts import RESEARCH_PROMPT, get_structured_prompt, get_agent_system_prompt
 
-search = DuckDuckGoSearchResults(output_format="list")
-
-@tool
-def intermediate_answer(query: str) -> str:
-    """Useful for when you need to ask with search."""
-    results = search.invoke(query)
-    # Format results as a readable string
-    if isinstance(results, list):
-        return "\n".join([
-            f"Title: {r.get('title','')}, Link: {r.get('link','')}, Snippet: {r.get('snippet','')}" for r in results
-        ])
-    return str(results)
-
-tools = [intermediate_answer]
+toolkit = WebSearchToolkit()
+tools = toolkit.get_tools()
 
 def get_agent():
     model = get_agent_llm('ResearchAgent')

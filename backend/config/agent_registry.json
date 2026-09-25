@@ -10,14 +10,13 @@
       "implemented": true
     },
     "TerminalAgent": {
-      "description": "Command-line execution and system operations using PowerShell or CMD",
+      "description": "Command-line execution and system operations using PowerShell or CMD or Bash commands",
       "capabilities": [
-        "Execute PowerShell/CMD commands",
+        "Execute PowerShell/CMD commands or Linux Commands",
         "Run scripts, manage packages and processes",
         "Git operations",
         "NO file creation/deletion/conversion"
       ],
-      "skill_path": "backend/skills/terminal-execution/SKILL.md",
       "implemented": true
     },
     "FileSystemAgent": {
@@ -29,14 +28,6 @@
         "NO file format conversion"
       ],
       "implemented": true
-    },
-    "RAGAgent": {
-      "description": "Knowledge retrieval from indexed documents using vector search with source citations",
-      "capabilities": [
-        "Query vector store for document contexts",
-        "Answer questions with source citations"
-      ],
-      "implemented": false
     },
     "ResearchAgent": {
       "description": "Web search and information gathering from the internet",
