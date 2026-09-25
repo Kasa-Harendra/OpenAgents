@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import toast from 'react-hot-toast';
+import toast from '../utils/toast';
 
 export interface Message {
   id: string;

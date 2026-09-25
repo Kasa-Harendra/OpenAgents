@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LogIn, ShieldCheck, Globe } from 'lucide-react';
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
+import toast from '../utils/toast';
 
 interface AuthPopupProps {
   onAuthenticated: () => void;

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Message } from '../stores/chatStore';
 import { cn } from '@/lib/utils';
-import { User, Sparkles, Globe, Folder, Terminal, ChevronDown, ChevronRight, Search, Copy, Check } from 'lucide-react';
+import { User, Sparkles, Globe, Folder, Terminal, Search, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -12,6 +12,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
+
+
 
 interface ChatMessageProps {
   message: Message;
@@ -62,6 +64,7 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
     </div>
   );
 };
+
 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';

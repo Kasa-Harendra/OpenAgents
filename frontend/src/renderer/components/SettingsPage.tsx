@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
+import toast from '../utils/toast';
 
 const BASE_URL = 'http://localhost:8000';
 

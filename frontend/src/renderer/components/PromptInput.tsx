@@ -3,7 +3,7 @@ import { ArrowUp, FolderOpen, X, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
-import toast from 'react-hot-toast';
+import toast from '../utils/toast';
 
 interface PromptInputProps {
   onSend: (content: string) => void;

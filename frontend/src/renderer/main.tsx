@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import { SwipeToastProvider } from './utils/toast';
 import App from './App';
 import './styles/globals.css';
 
@@ -14,7 +14,7 @@ const root = createRoot(container);
 root.render(
   <StrictMode>
     <HashRouter>
-      <Toaster position="top-right" />
+      <SwipeToastProvider />
       <App />
     </HashRouter>
   </StrictMode>
