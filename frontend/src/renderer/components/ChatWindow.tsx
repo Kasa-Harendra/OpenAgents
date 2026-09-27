@@ -136,15 +136,19 @@ const ChatWindow: React.FC = () => {
                     onChange={(e) => setTitleInput(e.target.value)}
                     onBlur={handleTitleSave}
                     onKeyDown={handleTitleKeyDown}
+                    aria-label="Rename chat title"
                     className="font-semibold text-lg bg-transparent border-b border-primary focus:outline-none w-full"
                 />
             ) : (
-                <h2 
-                    className="font-semibold text-lg cursor-pointer hover:underline decoration-dashed underline-offset-4 decoration-muted-foreground/50"
-                    onClick={handleTitleClick}
-                    title="Click to rename"
-                >
-                    {activeChat?.title || 'New Chat'}
+                <h2 className="font-semibold text-lg flex items-center">
+                    <button
+                        onClick={handleTitleClick}
+                        title="Click to rename chat"
+                        aria-label={`Rename chat: ${activeChat?.title || 'New Chat'}`}
+                        className="text-left cursor-pointer hover:underline decoration-dashed underline-offset-4 decoration-muted-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-sm px-1 -mx-1"
+                    >
+                        {activeChat?.title || 'New Chat'}
+                    </button>
                 </h2>
             )}
         </div>
