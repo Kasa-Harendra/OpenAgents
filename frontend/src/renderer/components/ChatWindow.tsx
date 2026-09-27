@@ -136,6 +136,7 @@ const ChatWindow: React.FC = () => {
                     onChange={(e) => setTitleInput(e.target.value)}
                     onBlur={handleTitleSave}
                     onKeyDown={handleTitleKeyDown}
+                    aria-label="Rename chat title"
                     className="font-semibold text-lg bg-transparent border-b border-primary focus:outline-none w-full"
                     aria-label="Edit chat title"
                 />
