@@ -5,3 +5,7 @@
 ## 2024-05-25 - Use Native Buttons for Collapsible Headers
 **Learning:** Found that custom interactive components (like collapsible headers for system messages and chat details) were built using `div` tags with `onClick` handlers. This prevents proper keyboard navigation (tabbing) and lacks native accessibility semantics, making it difficult for screen reader users to understand the component's state.
 **Action:** Always use native `<button type="button">` elements for interactive elements, and include `aria-expanded` and clear `focus-visible` styles to ensure full keyboard and screen reader accessibility.
+
+## 2024-05-14 - Interactive Headings Accessibility
+**Learning:** Headings (`<h2>`, `<h3>`, etc.) with `onClick` handlers break HTML semantics and are not natively keyboard accessible. Screen readers may not announce them as interactive, and keyboard users cannot focus on them.
+**Action:** When a heading needs to be interactive (like a clickable title to edit), always wrap the text in a native `<button>` element *inside* the heading element. Apply standard focus-visible styles (`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`) and an `aria-label` to the button.
