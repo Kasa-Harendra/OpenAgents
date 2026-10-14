@@ -6,7 +6,8 @@ import {
   MessageSquare, 
   ChevronLeft,
   ChevronRight,
-  User
+  User,
+  Puzzle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
@@ -110,6 +111,21 @@ const Sidebar: React.FC = () => {
           <ThemeToggle isCollapsed={isCollapsed} />
         </div>
         
+        <button 
+          onClick={() => navigate("/mods")}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover transition-all",
+            location.pathname === "/mods" 
+              ? "bg-secondary text-secondary-foreground" 
+              : "text-muted-foreground hover:text-foreground",
+            isCollapsed ? "justify-center" : ""
+          )}
+          title="Claude Mods"
+        >
+          <Puzzle size={18} />
+          {!isCollapsed && <span className="text-sm font-medium">Mods</span>}
+        </button>
+
         <button 
           onClick={() => navigate("/settings")}
           className={cn(

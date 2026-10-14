@@ -15,6 +15,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain.agents.middleware.types import (AgentState, _InputAgentState, _OutputAgentState)
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableConfig
+from backend.mods.mod_manager import ModManager
 
 # --- Helper Functions ---
 def _is_agent_config_error(error_str: str) -> bool:
@@ -108,6 +109,17 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                 # Tool output streaming
                 elif kind == "on_tool_end":
                     tool_output = event["data"]["output"]
+                    tool_name = event.get("name", "")
+                    tool_args = event.get("data", {}).get("input", {})
+                    after_ctx = await ModManager.get_instance().trigger_after_tool_execution(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        tool_result=tool_output,
+                        agent_name=agent.name
+                    )
+                    if after_ctx.tool_result is not None:
+                        tool_output = after_ctx.tool_result
+
                     if callback:
                         await callback(websocket_message(
                             type="tool_output",
@@ -127,7 +139,27 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                 # Status updates
                 elif kind == "on_tool_start":
                     tool_name = event["name"]
+                    tool_args = event.get("data", {}).get("input", {})
+                    tool_ctx = await ModManager.get_instance().trigger_before_tool_execution(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        agent_name=agent.name
+                    )
+                    if tool_ctx.cancelled:
+                        if callback:
+                            await callback(websocket_message(
+                                type="tool_error",
+                                agent_name=agent.name,
+                                content=f"Mod Blocked Tool Execution: {tool_ctx.cancel_reason or 'Blocked by active mod.'}"
+                            ))
+                        raise RuntimeError(f"Mod Guard Blocked: {tool_ctx.cancel_reason}")
+
                     if callback:
+                        for log_msg in tool_ctx.logs:
+                            await callback(websocket_message(
+                                type="status",
+                                content=f"[Mod] {log_msg}"
+                            ))
                         await callback(websocket_message(
                             type="status",
                             content=f"Agent {agent.name} is running tool: {tool_name}..."

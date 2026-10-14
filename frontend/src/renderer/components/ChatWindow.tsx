@@ -4,7 +4,8 @@ import { useChatStore } from '../stores/chatStore';
 import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Puzzle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 
@@ -152,9 +153,19 @@ const ChatWindow: React.FC = () => {
                 </h2>
             )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-            <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-            <span className="text-xs font-medium text-muted-foreground">{isConnected ? 'Online' : 'Offline'}</span>
+        <div className="flex items-center gap-3 shrink-0">
+            <Link
+                to="/mods"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
+                title="Manage Claude Mods"
+            >
+                <Puzzle size={13} />
+                <span>Mods</span>
+            </Link>
+            <div className="flex items-center gap-2">
+                <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+                <span className="text-xs font-medium text-muted-foreground">{isConnected ? 'Online' : 'Offline'}</span>
+            </div>
         </div>
       </div>
 

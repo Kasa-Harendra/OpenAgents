@@ -14,6 +14,8 @@ from backend.chat_flow import handle_general_chat
 from backend.agent_flow import execute
 from backend.routers.agent_config import router as config_router, init_db
 from backend.routers.auth import router as auth_router
+from backend.routers.mods import router as mods_router
+from backend.mods.mod_manager import ModManager
 
 import json
 import asyncio
@@ -26,6 +28,9 @@ Base.metadata.create_all(bind=engine)
 
 # Initialize database with default configs
 init_db()
+
+# Initialize ModManager
+ModManager.get_instance()
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,6 +46,7 @@ app.add_middleware(
 
 app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
+app.include_router(mods_router, tags=["mods"])
 
 active_tasks: Dict[str, asyncio.Task] = {}
 
@@ -78,6 +84,26 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 async def run_task():
                     try:
+                        # Trigger mod lifecycle before prompt
+                        nonlocal prompt
+                        mod_ctx = await ModManager.get_instance().trigger_before_prompt(prompt, session_id=session_id)
+                        if mod_ctx.cancelled:
+                            await streaming_callback(websocket_message(
+                                type="error",
+                                content=f"Mod Blocked Execution: {mod_ctx.cancel_reason or 'Operation aborted by active mod.'}",
+                                session_id=session_id
+                            ))
+                            return
+
+                        for log_msg in mod_ctx.logs:
+                            await streaming_callback(websocket_message(
+                                type="status",
+                                content=f"[Mod] {log_msg}",
+                                session_id=session_id
+                            ))
+
+                        prompt = mod_ctx.prompt or prompt
+
                         if chat_mode == "chat":
                             await handle_general_chat(prompt, history, streaming_callback)
                         else:

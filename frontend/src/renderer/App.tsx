@@ -7,6 +7,7 @@ import AppLayout from './components/AppLayout';
 import ChatWindow from './components/ChatWindow';
 
 import SettingsPage from './components/SettingsPage';
+import ModsPage from './components/ModsPage';
 import AuthPopup from './components/AuthPopup';
 import axios from 'axios';
 
@@ -76,6 +77,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<ChatWindow />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/mods" element={<ModsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AnimatePresence>
