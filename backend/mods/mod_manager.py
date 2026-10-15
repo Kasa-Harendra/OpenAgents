@@ -9,6 +9,8 @@ from pathlib import Path
 
 from backend.mods.mod_types import BaseMod, ModMetadata, ModContext, ModHookType, HudWidget
 
+from backend.config.openagents_dir import get_mods_dir, get_openagents_dir
+
 logger = logging.getLogger("openagents.mods")
 
 class ModManager:
@@ -21,7 +23,17 @@ class ModManager:
         else:
             self.mods_dir = Path(mods_dir)
             
-        self.state_file = self.mods_dir / "mods_state.json"
+        self.user_mods_dir = get_mods_dir()
+        self.state_file = get_openagents_dir() / "mods_state.json"
+        
+        legacy_state = self.mods_dir / "mods_state.json"
+        if legacy_state.exists() and not self.state_file.exists():
+            try:
+                import shutil
+                shutil.copy2(legacy_state, self.state_file)
+            except Exception:
+                pass
+
         self.mods: Dict[str, BaseMod] = {}
         self.enabled_states: Dict[str, bool] = self._load_states()
         self.hud_widgets: Dict[str, HudWidget] = {}
@@ -50,19 +62,21 @@ class ModManager:
             logger.error(f"Error saving mods_state.json: {e}")
 
     def discover_and_load_all(self) -> None:
-        """Scan mods directory for subdirectories containing mod.json."""
-        if not self.mods_dir.exists():
-            self.mods_dir.mkdir(parents=True, exist_ok=True)
-            return
+        """Scan system mods and ~/.openagents/mods for subdirectories containing mod.json."""
+        dirs_to_scan = [self.mods_dir, self.user_mods_dir]
+        for base_dir in dirs_to_scan:
+            if not base_dir.exists():
+                base_dir.mkdir(parents=True, exist_ok=True)
+                continue
 
-        for entry in self.mods_dir.iterdir():
-            if entry.is_dir() and not entry.name.startswith("__"):
-                manifest_path = entry / "mod.json"
-                if manifest_path.exists():
-                    try:
-                        self.load_mod_from_dir(entry)
-                    except Exception as e:
-                        logger.error(f"Failed to load mod from {entry}: {e}")
+            for entry in base_dir.iterdir():
+                if entry.is_dir() and not entry.name.startswith("__"):
+                    manifest_path = entry / "mod.json"
+                    if manifest_path.exists():
+                        try:
+                            self.load_mod_from_dir(entry)
+                        except Exception as e:
+                            logger.error(f"Failed to load mod from {entry}: {e}")
 
     def load_mod_from_dir(self, dir_path: Path) -> Optional[BaseMod]:
         manifest_file = dir_path / "mod.json"

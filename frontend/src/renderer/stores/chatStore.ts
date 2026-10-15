@@ -43,6 +43,7 @@ interface ChatState {
   setHudWidgets: (widgets: any[]) => void;
   activeTasks: Array<{ id?: string; agent: string; subtask: string; status?: 'pending' | 'in_progress' | 'completed' | 'failed' }>;
   setActiveTasks: (tasks: any[]) => void;
+  loadSessions: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -55,6 +56,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setHudWidgets: (widgets) => set({ hudWidgets: widgets }),
   activeTasks: [],
   setActiveTasks: (tasks) => set({ activeTasks: tasks }),
+
+  loadSessions: async () => {
+    try {
+      const res = await fetch('http://localhost:8000/history/sessions');
+      if (res.ok) {
+        const sessions = await res.json();
+        if (Array.isArray(sessions) && sessions.length > 0) {
+          const mappedChats: Chat[] = sessions.map((s: any) => ({
+            id: s.id,
+            title: s.title || 'Chat',
+            messages: [],
+            createdAt: s.created_at || Date.now(),
+            updatedAt: s.updated_at || Date.now(),
+            baseDirectory: s.base_directory || null,
+            isTyping: false,
+          }));
+
+          set((state) => {
+            const existingIds = new Set(state.chats.map((c) => c.id));
+            const newOnes = mappedChats.filter((c) => !existingIds.has(c.id));
+            const merged = [...state.chats, ...newOnes];
+            const activeId = state.activeChatId || (merged.length > 0 ? merged[0].id : null);
+            return {
+              chats: merged,
+              activeChatId: activeId
+            };
+          });
+
+          const active = get().activeChatId;
+          if (active) {
+            get().setActiveChat(active);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch ~/.openagents/history/sessions:', e);
+    }
+  },
   
   setBaseDirectory: (path) => set((state) => ({
     chats: state.chats.map((chat) =>
@@ -89,9 +128,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
       chats: state.chats.filter((c) => c.id !== id),
       activeChatId: state.activeChatId === id ? null : state.activeChatId,
     }));
+    try {
+      fetch(`http://localhost:8000/history/sessions/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
   },
   
-  setActiveChat: (id) => set({ activeChatId: id }),
+  setActiveChat: async (id) => {
+    set({ activeChatId: id });
+    if (!id) return;
+    const chat = get().chats.find((c) => c.id === id);
+    if (chat && chat.messages.length === 0) {
+      try {
+        const res = await fetch(`http://localhost:8000/history/sessions/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.messages)) {
+            set((state) => ({
+              chats: state.chats.map((c) =>
+                c.id === id
+                  ? { ...c, messages: data.messages, baseDirectory: data.base_directory ?? c.baseDirectory }
+                  : c
+              ),
+              activeTasks: data.tasks || state.activeTasks
+            }));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load session messages from ~/.openagents/history:', e);
+      }
+    }
+  },
   
   addMessage: (chatId, role, content, type, agentName) => {
     const newMessage: Message = {
@@ -151,6 +217,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     newSocket.onopen = () => {
       console.log('WebSocket Connected');
       set({ isConnected: true });
+      get().loadSessions();
     };
 
     newSocket.onclose = () => {

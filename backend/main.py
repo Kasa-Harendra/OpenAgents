@@ -15,15 +15,20 @@ from backend.agent_flow import execute
 from backend.routers.agent_config import router as config_router, init_db
 from backend.routers.auth import router as auth_router
 from backend.routers.mods import router as mods_router
+from backend.routers.skills import router as skills_router
+from backend.routers.history import router as history_router
+from backend.routers.config import router as system_config_router
+from backend.services.history_service import HistoryService
 from backend.mods.mod_manager import ModManager
 
 import json
+import time
 import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
-# Create database tables
+# Create database tables in ~/.openagents/openagents.db
 Base.metadata.create_all(bind=engine)
 
 # Initialize database with default configs
@@ -47,6 +52,9 @@ app.add_middleware(
 app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
 app.include_router(mods_router, tags=["mods"])
+app.include_router(skills_router)
+app.include_router(history_router)
+app.include_router(system_config_router)
 
 active_tasks: Dict[str, asyncio.Task] = {}
 
@@ -78,9 +86,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 base_directory = request.base_directory
                 chat_mode = getattr(request, 'chat_mode', 'multiagent')
 
+                recorded_messages = list(history) if history else []
+                recorded_messages.append({
+                    "id": f"msg_{int(time.time() * 1000)}",
+                    "role": "user",
+                    "content": prompt,
+                    "timestamp": int(time.time() * 1000)
+                })
+
                 async def streaming_callback(event: websocket_message):
                     event.session_id = session_id
                     await manager.send_json_safe(event, websocket)
+                    if event.type in ["agent_response", "tool_output", "error"]:
+                        recorded_messages.append({
+                            "id": f"msg_{int(time.time() * 1000)}",
+                            "role": "assistant",
+                            "content": event.content,
+                            "type": event.type,
+                            "agentName": event.agent_name,
+                            "timestamp": int(time.time() * 1000)
+                        })
 
                 async def run_task():
                     try:
@@ -143,6 +168,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     finally:
                         if session_id in active_tasks:
                             del active_tasks[session_id]
+                        # Persist conversation to ~/.openagents/history/
+                        try:
+                            title = prompt[:45] + ("..." if len(prompt) > 45 else "")
+                            HistoryService.save_session(
+                                session_id=session_id,
+                                title=title,
+                                messages=recorded_messages,
+                                base_directory=base_directory
+                            )
+                        except Exception as e:
+                            print(f"[openagents] Error saving session to ~/.openagents/history: {e}")
 
                 task = asyncio.create_task(run_task())
                 active_tasks[session_id] = task

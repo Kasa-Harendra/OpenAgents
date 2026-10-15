@@ -10,11 +10,14 @@ from langchain_community.utilities.nasa import NasaAPIWrapper
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
 from langchain_community.tools import YouTubeSearchTool
 
+from backend.config.openagents_dir import get_credentials_dir
+
 def get_google_tools():
+    creds_dir = get_credentials_dir()
     credentials = get_google_credentials(
-        token_file="backend/credentials/token.json",
+        token_file=str(creds_dir / "token.json"),
         scopes=["https://mail.google.com/", "https://www.googleapis.com/auth/calendar"],
-        client_secrets_file="backend/credentials/credentials.json",
+        client_secrets_file=str(creds_dir / "credentials.json"),
     )
     api_resource = build_resource_service(credentials=credentials)
 
