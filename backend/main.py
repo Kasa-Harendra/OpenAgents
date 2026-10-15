@@ -84,8 +84,28 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 async def run_task():
                     try:
-                        # Trigger mod lifecycle before prompt
                         nonlocal prompt
+
+                        # 1. Check for instant in-process slash commands
+                        if prompt.strip().startswith("/"):
+                            cmd_ctx = await ModManager.get_instance().trigger_custom_command(prompt, session_id=session_id)
+                            if cmd_ctx and cmd_ctx.command_output is not None:
+                                await streaming_callback(websocket_message(
+                                    type="agent_response",
+                                    agent_name="ClaudeMods",
+                                    content=cmd_ctx.command_output,
+                                    session_id=session_id
+                                ))
+                                hud_widgets = ModManager.get_instance().get_hud_widgets()
+                                if hud_widgets:
+                                    await streaming_callback(websocket_message(
+                                        type="mod_hud",
+                                        content=json.dumps(hud_widgets),
+                                        session_id=session_id
+                                    ))
+                                return
+
+                        # 2. Trigger mod lifecycle before prompt
                         mod_ctx = await ModManager.get_instance().trigger_before_prompt(prompt, session_id=session_id)
                         if mod_ctx.cancelled:
                             await streaming_callback(websocket_message(
@@ -99,6 +119,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             await streaming_callback(websocket_message(
                                 type="status",
                                 content=f"[Mod] {log_msg}",
+                                session_id=session_id
+                            ))
+
+                        # Send live HUD updates if any widgets exist
+                        hud_widgets = ModManager.get_instance().get_hud_widgets()
+                        if hud_widgets:
+                            await streaming_callback(websocket_message(
+                                type="mod_hud",
+                                content=json.dumps(hud_widgets),
                                 session_id=session_id
                             ))
 

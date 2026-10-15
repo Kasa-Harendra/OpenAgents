@@ -39,6 +39,8 @@ interface ChatState {
   setIsTyping: (chatId: string, isTyping: boolean) => void;
   chatMode: 'multiagent' | 'chat';
   setChatMode: (mode: 'multiagent' | 'chat') => void;
+  hudWidgets: Array<{ id: string; label: string; value: string; icon?: string; color?: string; progress?: number }>;
+  setHudWidgets: (widgets: any[]) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -47,6 +49,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   socket: null,
   isConnected: false,
   chatMode: 'multiagent',
+  hudWidgets: [],
+  setHudWidgets: (widgets) => set({ hudWidgets: widgets }),
   
   setBaseDirectory: (path) => set((state) => ({
     chats: state.chats.map((chat) =>
@@ -173,6 +177,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!currentChat) return;
         
         const lastMsg = currentChat.messages[currentChat.messages.length - 1];
+
+        if (type === 'mod_hud') {
+          try {
+            const widgets = typeof content === 'string' ? JSON.parse(content) : content;
+            if (Array.isArray(widgets)) {
+              set({ hudWidgets: widgets });
+            }
+          } catch (e) {
+            console.error('Failed to parse mod_hud message:', e);
+          }
+          return;
+        }
 
         if (type === 'agent_error') {
           // Show agent errors as toasts and don't add to chat to avoid clutter

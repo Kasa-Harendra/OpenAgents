@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 
 from backend.mods.mod_manager import ModManager
@@ -9,6 +9,12 @@ router = APIRouter(prefix="/mods")
 class ToggleResponse(BaseModel):
     mod_id: str
     enabled: bool
+
+class GenerateModRequest(BaseModel):
+    prompt: str
+
+class CommandRequest(BaseModel):
+    command: str
 
 @router.get("", response_model=List[Dict[str, Any]])
 def list_mods():
@@ -24,6 +30,33 @@ def get_active_mods():
         "total_installed": len(all_mods),
         "total_active": len(active),
         "active_mods": active
+    }
+
+@router.get("/hud", response_model=List[Dict[str, Any]])
+def get_hud_widgets():
+    mgr = ModManager.get_instance()
+    return mgr.get_hud_widgets()
+
+@router.post("/generate")
+async def generate_mod(req: GenerateModRequest):
+    mgr = ModManager.get_instance()
+    res = await mgr.generate_mod(req.prompt)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
+
+@router.post("/command")
+async def run_command(req: CommandRequest):
+    mgr = ModManager.get_instance()
+    ctx = await mgr.trigger_custom_command(req.command)
+    if ctx and ctx.command_output is not None:
+        return {
+            "handled": True,
+            "output": ctx.command_output
+        }
+    return {
+        "handled": False,
+        "output": None
     }
 
 @router.post("/{mod_id}/toggle", response_model=ToggleResponse)

@@ -9,6 +9,14 @@ class ModHookType(str, Enum):
     AFTER_TOOL_EXECUTION = "on_after_tool_execution"
     CUSTOM_COMMAND = "on_custom_command"
 
+class HudWidget(BaseModel):
+    id: str
+    label: str
+    value: str
+    icon: Optional[str] = None
+    color: Optional[str] = "default"
+    progress: Optional[float] = None
+
 class ModContext(BaseModel):
     event_type: str
     session_id: Optional[str] = None
@@ -21,6 +29,12 @@ class ModContext(BaseModel):
     cancel_reason: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     logs: List[str] = Field(default_factory=list)
+    hud_widgets: Dict[str, HudWidget] = Field(default_factory=dict)
+    
+    # Slash command fields
+    command: Optional[str] = None
+    command_args: Optional[str] = None
+    command_output: Optional[str] = None
 
     def log(self, message: str) -> None:
         self.logs.append(message)
@@ -29,6 +43,19 @@ class ModContext(BaseModel):
         self.cancelled = True
         self.cancel_reason = reason
         self.log(f"[ABORTED] {reason}")
+
+    def set_hud_widget(self, id: str, label: str, value: str, icon: Optional[str] = None, color: Optional[str] = "default", progress: Optional[float] = None) -> None:
+        self.hud_widgets[id] = HudWidget(
+            id=id,
+            label=label,
+            value=value,
+            icon=icon,
+            color=color,
+            progress=progress
+        )
+
+    def reply(self, output: str) -> None:
+        self.command_output = output
 
 class ModMetadata(BaseModel):
     id: str

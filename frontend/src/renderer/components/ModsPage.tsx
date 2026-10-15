@@ -8,7 +8,10 @@ import {
   Terminal, 
   MessageSquare, 
   Info,
-  Code
+  Code,
+  Sparkles,
+  Command,
+  ArrowRight
 } from 'lucide-react';
 import axios from 'axios';
 import { cn } from '../lib/utils';
@@ -17,17 +20,15 @@ import toast from '../utils/toast';
 const BASE_URL = 'http://localhost:8000';
 
 interface ModMetadata {
-  id: str;
-  name: str;
-  version: str;
-  description: str;
-  author: str;
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
   enabled: boolean;
   hooks: string[];
   entry: string;
 }
-
-type str = string;
 
 const HOOK_ICONS: Record<string, React.ReactNode> = {
   on_before_prompt: <MessageSquare size={14} className="text-blue-400" />,
@@ -41,6 +42,10 @@ const ModsPage: React.FC = () => {
   const [mods, setMods] = useState<ModMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  
+  // Prompt-to-Mod Generator state
+  const [generatePrompt, setGeneratePrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     fetchMods();
@@ -89,6 +94,29 @@ const ModsPage: React.FC = () => {
     }
   };
 
+  const handleGenerateMod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!generatePrompt.trim()) return;
+
+    try {
+      setIsGenerating(true);
+      const res = await axios.post<{ status: string; mod: ModMetadata }>(`${BASE_URL}/mods/generate`, {
+        prompt: generatePrompt.trim()
+      });
+
+      if (res.data.status === 'success' && res.data.mod) {
+        setMods(prev => [res.data.mod, ...prev.filter(m => m.id !== res.data.mod.id)]);
+        setGeneratePrompt('');
+        toast.success(`🎉 Created and loaded mod: "${res.data.mod.name}"`);
+      }
+    } catch (err: any) {
+      console.error('Failed to generate mod:', err);
+      toast.error(err.response?.data?.detail || 'Failed to generate mod.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const activeCount = mods.filter(m => m.enabled).length;
 
   return (
@@ -103,7 +131,7 @@ const ModsPage: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Claude Mods</h1>
               <p className="text-sm text-muted-foreground">
-                In-process lifecycle plugins for prompt rewriting, tool execution guardrails, and runtime telemetry.
+                In-process plugins for prompt rewriting, live HUD widgets, tool guardrails, and slash commands.
               </p>
             </div>
           </div>
@@ -148,6 +176,50 @@ const ModsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Prompt-to-Mod Generator Card */}
+      <div className="p-5 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-card/50 to-background shadow-sm space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles size={18} className="text-primary animate-pulse" />
+          <h3 className="font-semibold text-base text-foreground">Create Mod with Prompt (Meta-Modding)</h3>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Describe the feature or hook you want. OpenAgents writes the code, registers the lifecycle hooks, and hot-loads it live.
+        </p>
+
+        <form onSubmit={handleGenerateMod} className="flex flex-col sm:flex-row gap-2 pt-1">
+          <input
+            type="text"
+            value={generatePrompt}
+            onChange={(e) => setGeneratePrompt(e.target.value)}
+            placeholder="e.g. Track execution count, inject HUD widget, and alert on shell errors"
+            disabled={isGenerating}
+            className="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-background/80 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <button
+            type="submit"
+            disabled={isGenerating || !generatePrompt.trim()}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition-all active:scale-95 disabled:opacity-50 shrink-0"
+          >
+            {isGenerating ? (
+              <>
+                <RotateCw size={15} className="animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <span>Build Mod</span>
+                <ArrowRight size={15} />
+              </>
+            )}
+          </button>
+        </form>
+
+        <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+          <Command size={12} />
+          <span>You can also run <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">/create-mod &lt;description&gt;</code> directly in any chat!</span>
+        </div>
+      </div>
+
       {/* Mods List */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -166,7 +238,7 @@ const ModsPage: React.FC = () => {
           <div className="p-12 text-center text-muted-foreground border border-dashed border-border rounded-xl">
             <Puzzle size={32} className="mx-auto mb-3 text-muted-foreground/60" />
             <p className="font-medium text-foreground">No mods installed yet</p>
-            <p className="text-sm mt-1">Create a directory in <code className="bg-muted px-1.5 py-0.5 rounded">backend/mods/</code> with a <code className="bg-muted px-1.5 py-0.5 rounded">mod.json</code>.</p>
+            <p className="text-sm mt-1">Use the generator above or create a directory in <code className="bg-muted px-1.5 py-0.5 rounded">backend/mods/</code>.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
@@ -242,7 +314,7 @@ const ModsPage: React.FC = () => {
         <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
           <p className="font-medium text-foreground">How Claude Mods work in OpenAgents</p>
           <p>
-            Mods execute directly inside the Python agent runtime. They can inspect and alter prompts prior to model reasoning (<code className="text-foreground">on_before_prompt</code>), block or audit dangerous terminal/filesystem commands (<code className="text-foreground">on_before_tool_execution</code>), and scrub sensitive credentials from output logs (<code className="text-foreground">on_after_tool_execution</code>).
+            Mods execute directly inside the Python agent runtime. They can inspect and alter prompts prior to model reasoning (<code className="text-foreground">on_before_prompt</code>), block or audit dangerous terminal/filesystem commands (<code className="text-foreground">on_before_tool_execution</code>), inject live HUD widgets into the desktop chat (<code className="text-foreground">ctx.set_hud_widget</code>), and respond to instant slash commands (<code className="text-foreground">/mods</code>, <code className="text-foreground">/audit</code>).
           </p>
         </div>
       </div>

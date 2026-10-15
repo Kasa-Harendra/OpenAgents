@@ -4,6 +4,7 @@ import { useChatStore } from '../stores/chatStore';
 import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
+import ModHudBar from '@/components/ModHudBar';
 import { Sparkles, Puzzle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import gsap from 'gsap';
@@ -213,7 +214,10 @@ const ChatWindow: React.FC = () => {
         </div>
       </div>
 
-      <PromptInput onSend={handleSend} disabled={activeChat?.isTyping} />
+      <div className="shrink-0 w-full">
+        <ModHudBar />
+        <PromptInput onSend={handleSend} disabled={activeChat?.isTyping} />
+      </div>
     </div>
   );
 };
