@@ -5,6 +5,7 @@ import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
 import ModHudBar from '@/components/ModHudBar';
+import TaskChecklist from '@/components/TaskChecklist';
 import { Sparkles, Puzzle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import gsap from 'gsap';
@@ -172,6 +173,7 @@ const ChatWindow: React.FC = () => {
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 scroll-smooth pb-32" ref={scrollRef}>
         <div className="max-w-5xl mx-auto space-y-6">
+          <TaskChecklist />
           {activeChat?.messages.length === 0 ? (
             <EmptyState />
           ) : (

@@ -41,6 +41,8 @@ interface ChatState {
   setChatMode: (mode: 'multiagent' | 'chat') => void;
   hudWidgets: Array<{ id: string; label: string; value: string; icon?: string; color?: string; progress?: number }>;
   setHudWidgets: (widgets: any[]) => void;
+  activeTasks: Array<{ id?: string; agent: string; subtask: string; status?: 'pending' | 'in_progress' | 'completed' | 'failed' }>;
+  setActiveTasks: (tasks: any[]) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -51,6 +53,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   chatMode: 'multiagent',
   hudWidgets: [],
   setHudWidgets: (widgets) => set({ hudWidgets: widgets }),
+  activeTasks: [],
+  setActiveTasks: (tasks) => set({ activeTasks: tasks }),
   
   setBaseDirectory: (path) => set((state) => ({
     chats: state.chats.map((chat) =>
@@ -186,6 +190,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
           } catch (e) {
             console.error('Failed to parse mod_hud message:', e);
+          }
+          return;
+        }
+
+        if (type === 'tasks_decomposed' || type === 'tasks_updated') {
+          if (Array.isArray(content)) {
+            set({ activeTasks: content });
           }
           return;
         }

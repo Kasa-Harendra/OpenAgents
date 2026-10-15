@@ -17,7 +17,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
@@ -29,8 +29,10 @@ from backend.agents.prompts.prompts import ORCHESTRATOR_PROMPT_BASE, get_structu
 
 class SubTask(BaseModel):
     """Model for a subtask in the execution plan"""
+    id: Optional[str] = Field(default=None, description="Unique identifier for the subtask")
     agent: str = Field(description="Name of the agent to execute this subtask")
     subtask: str = Field(description="Detailed description of what this agent should do")
+    status: Optional[str] = Field(default="pending", description="Status: pending | in_progress | completed | failed")
 
 
 class ExecutionPlan(BaseModel):
@@ -146,10 +148,8 @@ class OrchestratorAgent:
             # Find JSON block in the response
             try:
                 tasks = self.parser.parse(response.content)
-                # print(tasks)
-
                 execution_plan = tasks["tasks"]
-                return execution_plan
+                return self._enrich_tasks(execution_plan)
             except:
                 import re
                 json_match = re.search(r'\{[\s\S]*"tasks"[\s\S]*\}', content)
@@ -157,17 +157,80 @@ class OrchestratorAgent:
                 if json_match:
                     json_str = json_match.group(0)
                     result = json.loads(json_str)
-                    # Convert to list of tuples
                     execution_plan = result["tasks"]
-                    return execution_plan
+                    return self._enrich_tasks(execution_plan)
                 else:
                     print(f"Could not find JSON in response, using fallback")
-                    return self._fallback_decomposition(user_prompt)
+                    return self._enrich_tasks(self._fallback_decomposition(user_prompt))
             
         except Exception as e:
             print(f"Error during task decomposition: {e}")
-            # Fallback: try to parse manually if JSON parsing fails
-            return self._fallback_decomposition(user_prompt)
+            return self._enrich_tasks(self._fallback_decomposition(user_prompt))
+
+    def _enrich_tasks(self, tasks: List[Any]) -> List[Dict[str, Any]]:
+        enriched = []
+        for idx, t in enumerate(tasks):
+            if isinstance(t, dict):
+                enriched.append({
+                    "id": t.get("id") or f"task_{idx + 1}",
+                    "agent": t.get("agent", "Coordinator"),
+                    "subtask": t.get("subtask", ""),
+                    "status": t.get("status", "pending")
+                })
+            elif hasattr(t, "agent") and hasattr(t, "subtask"):
+                enriched.append({
+                    "id": getattr(t, "id", None) or f"task_{idx + 1}",
+                    "agent": t.agent,
+                    "subtask": t.subtask,
+                    "status": getattr(t, "status", "pending")
+                })
+        return enriched
+
+    def replan_subtasks(self, original_prompt: str, failed_subtask: str, error_msg: str, completed_context: List[Dict]) -> List[Dict[str, Any]]:
+        """
+        Self-healing replan: reformulates remaining subtasks when a step fails.
+        """
+        if not self.llm:
+            return [{
+                "id": "replan_1",
+                "agent": "TerminalAgent",
+                "subtask": f"Diagnose error '{error_msg}' and recover from failed step: {failed_subtask}",
+                "status": "pending"
+            }]
+
+        try:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", 
+                 "You are an expert self-healing orchestrator. A multi-agent workflow encountered an error on a subtask.\n"
+                 "Analyze the error, past context, and user's original goal, then generate a revised list of sequential subtasks to recover and complete the goal.\n"
+                 "Output ONLY valid JSON: {{\"tasks\": [{{\"agent\": \"AgentName\", \"subtask\": \"Specific corrective action\"}}]}}"
+                ),
+                ("human", 
+                 f"ORIGINAL GOAL: {original_prompt}\n"
+                 f"FAILED SUBTASK: {failed_subtask}\n"
+                 f"ERROR MESSAGE: {error_msg}\n"
+                 f"COMPLETED SO FAR: {len(completed_context)} steps."
+                )
+            ])
+            chain = prompt | self.llm
+            response = chain.invoke({})
+            content = response.content if hasattr(response, 'content') else str(response)
+            
+            import re
+            json_match = re.search(r'\{[\s\S]*"tasks"[\s\S]*\}', content)
+            if json_match:
+                parsed = json.loads(json_match.group(0))
+                return self._enrich_tasks(parsed.get("tasks", []))
+        except Exception as e:
+            print(f"Error in replan_subtasks: {e}")
+
+        # Fallback corrective subtask
+        return [{
+            "id": "replan_fallback",
+            "agent": "TerminalAgent",
+            "subtask": f"Check status and diagnose failure: {error_msg}",
+            "status": "pending"
+        }]
 
     
     def _fallback_decomposition(self, user_prompt: str) -> List[Dict[str, str]]:

@@ -10,7 +10,6 @@ if project_root not in sys.path:
 from langchain.agents import create_agent
 from backend.agents.model_providers.agent_llms import get_agent_llm
 from backend.agents.prompts.prompts import INTEGRATOR_AGENT_PROMPT, get_structured_prompt, get_agent_system_prompt
-from backend.utils.additional_tools import get_tools
 
 from langgraph.graph.state import CompiledStateGraph
 from langchain.agents.middleware.types import (AgentState, _InputAgentState, _OutputAgentState)
@@ -22,7 +21,7 @@ async def get_agent() -> CompiledStateGraph[AgentState[Any], Any, _InputAgentSta
     if not model:
         return None
         
-    tools = get_tools()
+    # tools = get_tools()
     
     # Use centralized prompt helper for caching
     prompt_str = get_agent_system_prompt("IntegratorAgent", INTEGRATOR_AGENT_PROMPT)
@@ -30,7 +29,7 @@ async def get_agent() -> CompiledStateGraph[AgentState[Any], Any, _InputAgentSta
 
     return create_agent(
         model,
-        tools,
+        tools=[],
         system_prompt=structured_system_prompt,
         name="IntegratorAgent"
     )
