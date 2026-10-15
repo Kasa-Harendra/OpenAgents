@@ -7,7 +7,9 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  Puzzle
+  Puzzle,
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
@@ -17,7 +19,7 @@ import gsap from 'gsap';
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { chats, activeChatId, setActiveChat, addChat } = useChatStore();
+  const { chats, activeChatId, setActiveChat, addChat, removeChat } = useChatStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -94,10 +96,24 @@ const Sidebar: React.FC = () => {
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
                 />
               )}
-              <div className="relative z-10 flex items-center gap-3 w-full">
-                <MessageSquare size={18} className="flex-shrink-0" />
+              <div className="relative z-10 flex items-center justify-between gap-2 w-full">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <MessageSquare size={18} className="flex-shrink-0" />
+                  {!isCollapsed && (
+                    <span className="text-sm font-medium truncate text-left">{chat.title}</span>
+                  )}
+                </div>
                 {!isCollapsed && (
-                  <span className="text-sm font-medium truncate text-left w-full">{chat.title}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeChat(chat.id);
+                    }}
+                    className="opacity-0 group-hover/item:opacity-100 p-1 hover:text-destructive hover:bg-destructive/10 rounded transition-all"
+                    title="Delete Chat"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 )}
               </div>
             </motion.button>
@@ -111,6 +127,21 @@ const Sidebar: React.FC = () => {
           <ThemeToggle isCollapsed={isCollapsed} />
         </div>
         
+        <button 
+          onClick={() => navigate("/skills")}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover transition-all",
+            location.pathname === "/skills" 
+              ? "bg-secondary text-secondary-foreground" 
+              : "text-muted-foreground hover:text-foreground",
+            isCollapsed ? "justify-center" : ""
+          )}
+          title="Skills (~/.openagents/skills)"
+        >
+          <Sparkles size={18} className="text-primary" />
+          {!isCollapsed && <span className="text-sm font-medium">Skills</span>}
+        </button>
+
         <button 
           onClick={() => navigate("/mods")}
           className={cn(

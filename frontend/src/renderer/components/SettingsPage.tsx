@@ -10,7 +10,10 @@ import {
   Info,
   User,
   LogOut,
-  FileText
+  FileText,
+  HardDrive,
+  Shield,
+  CheckCircle2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -36,10 +39,25 @@ interface AgentPrompt {
   updated_at?: string;
 }
 
+interface StorageOverview {
+  home: string;
+  database: string;
+  database_exists: boolean;
+  credentials_dir: string;
+  credentials_secured: boolean;
+  skills_dir: string;
+  skills_count: number;
+  mods_dir: string;
+  mods_count: number;
+  history_dir: string;
+  history_sessions_count: number;
+  audit_dir: string;
+}
+
 const PROVIDERS = ['NONE', 'OLLAMA', 'OPENAI', 'GEMINI', 'ANTHROPIC', 'GROQ', 'OTHERS'];
 
 const SettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'agents' | 'mcp' | 'prompts' | 'account'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'mcp' | 'prompts' | 'system' | 'account'>('agents');
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
   const [prompts, setPrompts] = useState<AgentPrompt[]>([]);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -48,12 +66,59 @@ const SettingsPage: React.FC = () => {
   const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
   const [promptEditForm, setPromptEditForm] = useState<AgentPrompt | null>(null);
   
+  // System & Storage state (~/.openagents)
+  const [storageData, setStorageData] = useState<StorageOverview | null>(null);
+  const [systemConfig, setSystemConfig] = useState<any>({
+    version: '1.0.0',
+    theme: 'dark',
+    telemetry: false,
+    default_model_provider: 'gemini',
+    default_chat_mode: 'multiagent',
+    server: { host: '127.0.0.1', port: 8000 },
+    features: {
+      claude_mods: true,
+      self_healing: true,
+      context_compaction: true,
+      human_in_the_loop: true
+    }
+  });
+  const [savingSystem, setSavingSystem] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchConfigs();
     fetchPrompts();
+    fetchSystemInfo();
   }, []);
+
+  const fetchSystemInfo = async () => {
+    try {
+      const [storageRes, configRes] = await Promise.all([
+        axios.get(`${BASE_URL}/system/storage`),
+        axios.get(`${BASE_URL}/system/config`)
+      ]);
+      setStorageData(storageRes.data);
+      if (configRes.data?.config) {
+        setSystemConfig(configRes.data.config);
+      }
+    } catch (err) {
+      console.error('Failed to fetch system info:', err);
+    }
+  };
+
+  const handleSaveSystemConfig = async () => {
+    try {
+      setSavingSystem(true);
+      await axios.post(`${BASE_URL}/system/config`, { settings: systemConfig });
+      toast.success('System configuration saved to ~/.openagents/config.json');
+      fetchSystemInfo();
+    } catch (err) {
+      toast.error('Failed to save system configuration');
+    } finally {
+      setSavingSystem(false);
+    }
+  };
 
   const fetchConfigs = async () => {
     try {
@@ -246,6 +311,18 @@ const SettingsPage: React.FC = () => {
         >
           <FileText size={16} />
           System Prompts
+        </button>
+        <button
+          onClick={() => setActiveTab('system')}
+          className={cn(
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
+            activeTab === 'system' 
+              ? "border-primary text-primary" 
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <HardDrive size={16} />
+          System & Storage
         </button>
         <button
           onClick={() => setActiveTab('account')}
@@ -515,6 +592,183 @@ const SettingsPage: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        ) : activeTab === 'system' ? (
+          <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-200">
+            {/* Storage Card */}
+            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                    <HardDrive size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold">Standardized Storage Directory</h2>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {storageData?.home || '~/.openagents'}
+                    </p>
+                  </div>
+                </div>
+                <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+                  <CheckCircle2 size={13} /> Active & Standardized
+                </span>
+              </div>
+
+              {/* Grid of paths */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div className="p-4 rounded-xl bg-secondary/40 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Database Engine</span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400">SQLite</span>
+                  </div>
+                  <div className="font-mono text-xs text-foreground font-semibold mt-1 truncate">
+                    {storageData?.database || '~/.openagents/openagents.db'}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Houses agent configurations, system prompts, and MCP registries.
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/40 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Credentials Vault</span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 flex items-center gap-1">
+                      <Shield size={10} /> 0o700 Secure
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-foreground font-semibold mt-1 truncate">
+                    {storageData?.credentials_dir || '~/.openagents/credentials'}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Isolated Google OAuth credentials, refresh tokens, and user secrets.
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/40 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Autonomous Skills</span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400">
+                      {storageData?.skills_count ?? 6} Skills
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-foreground font-semibold mt-1 truncate">
+                    {storageData?.skills_dir || '~/.openagents/skills'}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Standardized SKILL.md playbooks discovered dynamically by Orchestrator.
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/40 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Conversation History</span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400">
+                      {storageData?.history_sessions_count ?? 0} Sessions
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-foreground font-semibold mt-1 truncate">
+                    {storageData?.history_dir || '~/.openagents/history'}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground mt-1 block">
+                    Persistent conversation transcripts, sessions index, and task checklists.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Config Form Card */}
+            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-bold mb-1">Global Configuration (~/.openagents/config.json)</h2>
+              <p className="text-xs text-muted-foreground mb-6">
+                System preferences and core execution engines.
+              </p>
+
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                      Default LLM Provider
+                    </label>
+                    <select
+                      value={systemConfig.default_model_provider || 'gemini'}
+                      onChange={(e) => setSystemConfig({ ...systemConfig, default_model_provider: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
+                    >
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic Claude</option>
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="groq">Groq</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                      Default Chat Mode
+                    </label>
+                    <select
+                      value={systemConfig.default_chat_mode || 'multiagent'}
+                      onChange={(e) => setSystemConfig({ ...systemConfig, default_chat_mode: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none"
+                    >
+                      <option value="multiagent">Multi-Agent Orchestration</option>
+                      <option value="chat">Direct Conversational Chat</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Feature Toggles */}
+                <div className="pt-4 border-t border-border/60">
+                  <h3 className="text-sm font-semibold mb-3">Core Engines & Guardrails</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {[
+                      { key: 'claude_mods', label: 'Claude Mods In-Process Engine', desc: 'Allows prompt-to-mod extensions and live HUD status.' },
+                      { key: 'self_healing', label: 'Self-Healing Replanning Loop', desc: 'Recovers automatically on agent tool step failures.' },
+                      { key: 'context_compaction', label: 'Dynamic Context Compactor', desc: 'Truncates middle logs while preserving diagnostic heads and tails.' },
+                      { key: 'human_in_the_loop', label: 'Human-In-The-Loop Risk Gateway', desc: 'Requires manual confirmation for destructive shell commands.' },
+                    ].map((feature) => (
+                      <label
+                        key={feature.key}
+                        className="flex items-start gap-3 p-3.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={systemConfig.features?.[feature.key] ?? true}
+                          onChange={(e) =>
+                            setSystemConfig({
+                              ...systemConfig,
+                              features: {
+                                ...systemConfig.features,
+                                [feature.key]: e.target.checked
+                              }
+                            })
+                          }
+                          className="mt-1 rounded border-border text-primary focus:ring-primary"
+                        />
+                        <div>
+                          <div className="text-sm font-medium">{feature.label}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{feature.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-border/60 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground font-mono">
+                    Target: ~/.openagents/config.json
+                  </span>
+                  <button
+                    onClick={handleSaveSystemConfig}
+                    disabled={savingSystem}
+                    className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl font-medium hover:bg-primary/90 transition-all shadow-sm active:scale-95 text-sm"
+                  >
+                    <Save size={16} />
+                    {savingSystem ? 'Saving...' : 'Save System Configuration'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="max-w-2xl mx-auto">
