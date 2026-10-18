@@ -29,7 +29,7 @@ async def get_agent() -> CompiledStateGraph[AgentState[Any], Any, _InputAgentSta
 
     return create_agent(
         model,
-        tools=[],
+        # tools,
         system_prompt=structured_system_prompt,
         name="IntegratorAgent"
     )

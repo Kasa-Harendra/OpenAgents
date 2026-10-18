@@ -185,16 +185,50 @@ export const api = {
 
     return ws;
   },
+};
 
-  /**
-   * Check if the backend is healthy
-   */
-  healthCheck: async (): Promise<boolean> => {
-    try {
-      await axios.get(`${BASE_URL}/health`);
-      return true;
-    } catch {
-      return false;
-    }
+export interface ConversationSummary {
+  convo_id: string;
+  title: string;
+  message_count: number;
+  last_message_preview?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationDetail {
+  convo_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  base_directory?: string | null;
+  chat_mode?: string;
+  messages: any[];
+}
+
+export const conversationApi = {
+  listConversations: async (): Promise<ConversationSummary[]> => {
+    const response = await client.get<ConversationSummary[]>('/api/conversations');
+    return response.data;
+  },
+
+  getConversation: async (convo_id: string): Promise<ConversationDetail> => {
+    const response = await client.get<ConversationDetail>(`/api/conversations/${convo_id}`);
+    return response.data;
+  },
+
+  createConversation: async (data?: { convo_id?: string; title?: string; base_directory?: string | null; chat_mode?: string }): Promise<ConversationDetail> => {
+    const response = await client.post<ConversationDetail>('/api/conversations', data || {});
+    return response.data;
+  },
+
+  updateConversation: async (convo_id: string, data: { title?: string; base_directory?: string | null }): Promise<ConversationDetail> => {
+    const response = await client.put<ConversationDetail>(`/api/conversations/${convo_id}`, data);
+    return response.data;
+  },
+
+  deleteConversation: async (convo_id: string): Promise<{ status: string; convo_id: string }> => {
+    const response = await client.delete<{ status: string; convo_id: string }>(`/api/conversations/${convo_id}`);
+    return response.data;
   },
 };

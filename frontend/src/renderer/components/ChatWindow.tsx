@@ -4,10 +4,7 @@ import { useChatStore } from '../stores/chatStore';
 import ChatMessage from '@/components/ChatMessage';
 import SystemMessageGroup from '@/components/SystemMessageGroup';
 import PromptInput from '@/components/PromptInput';
-import ModHudBar from '@/components/ModHudBar';
-import TaskChecklist from '@/components/TaskChecklist';
-import { Sparkles, Puzzle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Sparkles } from 'lucide-react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 
@@ -155,25 +152,14 @@ const ChatWindow: React.FC = () => {
                 </h2>
             )}
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-            <Link
-                to="/mods"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors"
-                title="Manage Claude Mods"
-            >
-                <Puzzle size={13} />
-                <span>Mods</span>
-            </Link>
-            <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-                <span className="text-xs font-medium text-muted-foreground">{isConnected ? 'Online' : 'Offline'}</span>
-            </div>
+        <div className="flex items-center gap-2 shrink-0">
+            <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+            <span className="text-xs font-medium text-muted-foreground">{isConnected ? 'Online' : 'Offline'}</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 scroll-smooth pb-32" ref={scrollRef}>
         <div className="max-w-5xl mx-auto space-y-6">
-          <TaskChecklist />
           {activeChat?.messages.length === 0 ? (
             <EmptyState />
           ) : (
@@ -216,10 +202,7 @@ const ChatWindow: React.FC = () => {
         </div>
       </div>
 
-      <div className="shrink-0 w-full">
-        <ModHudBar />
-        <PromptInput onSend={handleSend} disabled={activeChat?.isTyping} />
-      </div>
+      <PromptInput onSend={handleSend} disabled={activeChat?.isTyping} />
     </div>
   );
 };

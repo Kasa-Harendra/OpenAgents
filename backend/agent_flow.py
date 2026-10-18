@@ -2,7 +2,6 @@ import sys
 import os
 import asyncio
 import uuid
-import json
 from typing import List, Dict, Any, TypedDict, Optional
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,8 +15,6 @@ from langgraph.graph import StateGraph, START, END
 from langchain.agents.middleware.types import (AgentState, _InputAgentState, _OutputAgentState)
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableConfig
-from backend.mods.mod_manager import ModManager
-from backend.utils.context_compactor import compact_context
 
 # --- Helper Functions ---
 def _is_agent_config_error(error_str: str) -> bool:
@@ -50,17 +47,19 @@ async def _get_agent(agent_name: str) -> CompiledStateGraph[AgentState[Any], Any
             return orchestrator
         
 def _process_subtask(sub_task: str, context: List[Dict]) -> str:
-    compacted = compact_context(context, max_chars_per_record=3000)
-    context_prompt_template = """{response}"""
+    context_prompt_template = """
+{response}
+"""
     prompt_template = PromptTemplate.from_template(context_prompt_template)
 
-    if len(compacted) != 0:
-        prev_rec = compacted[-1]
+    if len(context) != 0:
+        prev_rec = context[-1]
+        print(prev_rec)
         processed_prompt = prompt_template.invoke(
             {'agent': prev_rec['agent_name'], 'response': prev_rec['response']}
         )
-        return sub_task + "\n\nContext from previous step:\n" + str(processed_prompt)
-    return sub_task
+
+    return sub_task if len(context) == 0 else sub_task + "\n" + str(processed_prompt)
 
 def _evaluate_response(prompt: str, response: str):
     from backend.agents.evaluation_agent import agent as evaluation_agent
@@ -69,13 +68,14 @@ def _evaluate_response(prompt: str, response: str):
             prompt=prompt,
             response=response
         )
+
         return True if verdict == "Proceed" else False
     except Exception as e:
         print(f"Error in evaluation_agent: {e}")
         return True
 
 async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, callback=None):
-    MAX_RETRIES = 2
+    MAX_RETRIES = 3
 
     while MAX_RETRIES > 0:
         try:
@@ -105,20 +105,9 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                                 chunk=content
                             ))
                 
-                # Tool output streaming with Claude Code-style interceptors
+                # Tool output streaming
                 elif kind == "on_tool_end":
                     tool_output = event["data"]["output"]
-                    tool_name = event.get("name", "")
-                    tool_args = event.get("data", {}).get("input", {})
-                    after_ctx = await ModManager.get_instance().trigger_after_tool_execution(
-                        tool_name=tool_name,
-                        tool_args=tool_args,
-                        tool_result=tool_output,
-                        agent_name=agent.name
-                    )
-                    if after_ctx.tool_result is not None:
-                        tool_output = after_ctx.tool_result
-
                     if callback:
                         await callback(websocket_message(
                             type="tool_output",
@@ -138,33 +127,13 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                 # Status updates
                 elif kind == "on_tool_start":
                     tool_name = event["name"]
-                    tool_args = event.get("data", {}).get("input", {})
-                    tool_ctx = await ModManager.get_instance().trigger_before_tool_execution(
-                        tool_name=tool_name,
-                        tool_args=tool_args,
-                        agent_name=agent.name
-                    )
-                    if tool_ctx.cancelled:
-                        if callback:
-                            await callback(websocket_message(
-                                type="tool_error",
-                                agent_name=agent.name,
-                                content=f"Mod Blocked Tool Execution: {tool_ctx.cancel_reason or 'Blocked by active mod.'}"
-                            ))
-                        raise RuntimeError(f"Mod Guard Blocked: {tool_ctx.cancel_reason}")
-
                     if callback:
-                        for log_msg in tool_ctx.logs:
-                            await callback(websocket_message(
-                                type="status",
-                                content=f"[Mod] {log_msg}"
-                            ))
                         await callback(websocket_message(
                             type="status",
                             content=f"Agent {agent.name} is running tool: {tool_name}..."
                         ))
 
-            if _evaluate_response(prompt, agent_rec["response"]):
+            if(_evaluate_response(prompt, agent_rec["response"])):
                 context.append(agent_rec)
                 if callback:
                     await callback(websocket_message(
@@ -172,37 +141,42 @@ async def _invoke_agent(agent: CompiledStateGraph, prompt: str, context: list, c
                         agent_name=agent.name,
                         content=agent_rec["response"]
                     ))
-                return True
+                return True # Success message
             else:
                 MAX_RETRIES -= 1
 
         except Exception as e:
             error_str = str(e)
-            print(f"Error occurred in {agent.name}: {error_str}")
+            print(f"Error occured in {agent.name}: {error_str}")
+            
             is_agent_error = _is_agent_config_error(error_str)
+            
             if callback:
                 await callback(websocket_message(
                     type="agent_error" if is_agent_error else "error",
                     agent_name=agent.name,
                     content=error_str
-                ))
+                 ))
             MAX_RETRIES -= 1
+    return False # Failure message
 
-    return False
 
-# --- Graph State Definition ---
+# --- State Definition ---
+class SubTask(TypedDict):
+    agent: str
+    subtask: str
+
 class OpenAgentsState(TypedDict):
     prompt: str
     base_directory: str
     history: List[Dict]
     
-    tasks: List[Dict[str, Any]]
+    tasks: List[SubTask]
     current_task_index: int
     context: List[Dict]
     
     error: str
     status: str
-    replan_count: int
 
 # --- Nodes ---
 async def decompose_task_node(state: OpenAgentsState, config: RunnableConfig) -> Dict:
@@ -213,20 +187,22 @@ async def decompose_task_node(state: OpenAgentsState, config: RunnableConfig) ->
     history = state["history"]
 
     if callback:
-        await callback(websocket_message(type="status", content="Planning task execution graph..."))
+        await callback(websocket_message(type="status", content="Decomposing task..."))
         
+    print(f"DEBUG: calling decompose_task with prompt: {prompt}")
     try:
         from backend.agents.orchestrator_agent import orchestrator
         loop = asyncio.get_running_loop()
         tasks = await loop.run_in_executor(None, orchestrator.decompose_task, prompt, base_directory, history)
+        print(f"DEBUG: decomposed tasks: {tasks}")
         
         if callback:
             await callback(websocket_message(type="tasks_decomposed", content=tasks))
-            await callback(websocket_message(type="tasks_updated", content=tasks))
             
-        return {"tasks": tasks, "current_task_index": 0, "error": "", "replan_count": 0}
+        return {"tasks": tasks, "current_task_index": 0, "error": ""}
     except Exception as e:
         error_str = str(e)
+        print(f"DEBUG: Error in decompose_task: {error_str}")
         is_agent_error = _is_agent_config_error(error_str)
         if callback:
             await callback(websocket_message(
@@ -238,7 +214,7 @@ async def decompose_task_node(state: OpenAgentsState, config: RunnableConfig) ->
 async def execute_subtask_node(state: OpenAgentsState, config: RunnableConfig) -> Dict:
     callback = config.get("configurable", {}).get("callback")
     
-    tasks = [dict(t) for t in state.get("tasks", [])]
+    tasks = state.get("tasks", [])
     current_index = state.get("current_task_index", 0)
     context = list(state.get("context", []))
     
@@ -249,37 +225,36 @@ async def execute_subtask_node(state: OpenAgentsState, config: RunnableConfig) -
     agent_name = task.get("agent")
     sub_task = task.get("subtask")
     
-    # Mark task as in-progress and stream checklist update
-    task["status"] = "in_progress"
-    if callback:
-        await callback(websocket_message(type="tasks_updated", content=tasks))
-        await callback(websocket_message(type="agent_start", agent_name=agent_name, content=sub_task))
-
+    print(f"DEBUG: processing task for agent: {agent_name}")
+    
+    # Check if agent is configured
     from backend.agents.model_providers.agent_llms import get_agent_llm
     if agent_name != "Coordinator" and not get_agent_llm(agent_name):
-        error_msg = f"Agent '{agent_name}' is not configured. Please check Settings."
-        task["status"] = "failed"
+        error_msg = f"Agent '{agent_name}' is not configured. Please go to Settings to set it up."
         if callback:
             await callback(websocket_message(type="agent_error", content=error_msg))
-            await callback(websocket_message(type="tasks_updated", content=tasks))
-        return {"error": error_msg, "tasks": tasks}
+        return {"error": error_msg}
 
     agent = await _get_agent(agent_name)
     if agent is None:
-        error_msg = f"Agent '{agent_name}' failed to initialize."
-        task["status"] = "failed"
+        error_msg = f"Agent '{agent_name}' failed to initialize. Please check its configuration."
         if callback:
             await callback(websocket_message(type="agent_error", content=error_msg))
-            await callback(websocket_message(type="tasks_updated", content=tasks))
-        return {"error": error_msg, "tasks": tasks}
+        return {"error": error_msg}
         
     processed_sub_task = _process_subtask(sub_task, context)
 
-    success = False
+    if callback:
+        await callback(websocket_message(type="agent_start", agent_name=agent_name, content=sub_task))
+
     if agent_name in ["FileSystemAgent", "TerminalAgent", "ResearchAgent", "IntegratorAgent"]:
-        success = await _invoke_agent(agent, processed_sub_task, context, callback)
+        print(f"DEBUG: invoking {agent_name}")
+        if not (await _invoke_agent(agent, processed_sub_task, context, callback)):
+            error_msg = f"{agent_name} failed to do - {sub_task}"
+            return {"error": error_msg}
 
     elif agent_name in ["BrowserAgent"]:
+        print(f"DEBUG: invoking BrowserAgent subprocess")
         try:
             python_exe = sys.executable
             script_path = os.path.join(os.path.dirname(__file__), 'agents', 'browser_agent.py')
@@ -289,79 +264,34 @@ async def execute_subtask_node(state: OpenAgentsState, config: RunnableConfig) -
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
+            
             stdout, stderr = await process.communicate()
             res = stdout.decode().strip()
             err = stderr.decode().strip()
             
             if process.returncode == 0 and res != "Failed":
+                print(f"DEBUG: BrowserAgent subprocess output: {res}")
                 context.append({"id": str(uuid.uuid1()), "agent_name": "BrowserAgent", "response": res})
                 if callback:
                     await callback(websocket_message(type="agent_response", agent_name="BrowserAgent", content=res))
-                success = True
             else:
-                err_msg = err if err else res
+                error_msg = f"BrowserAgent failed: {err if err else res}"
+                print(f"DEBUG: {error_msg}")
                 if callback:
-                    await callback(websocket_message(type="agent_error", content=f"Browser error: {err_msg}"))
+                    await callback(websocket_message(type="agent_error", content=error_msg))
+                return {"error": error_msg}
         except Exception as e:
+            error_msg = f"Error launching BrowserAgent subprocess: {e}"
+            print(f"DEBUG: {error_msg}")
             if callback:
-                await callback(websocket_message(type="agent_error", content=f"Browser launch failed: {e}"))
+                await callback(websocket_message(type="agent_error", content=error_msg))
+            return {"error": error_msg}
 
-    if success:
-        task["status"] = "completed"
-        if callback:
-            await callback(websocket_message(type="tasks_updated", content=tasks))
-        return {"context": context, "tasks": tasks, "current_task_index": current_index + 1, "error": ""}
-    else:
-        task["status"] = "failed"
-        error_msg = f"{agent_name} failed to complete: {sub_task}"
-        if callback:
-            await callback(websocket_message(type="tasks_updated", content=tasks))
-        return {"error": error_msg, "tasks": tasks}
-
-async def replan_node(state: OpenAgentsState, config: RunnableConfig) -> Dict:
-    """Self-healing node: dynamically recalculates tasks upon encountering a failure."""
-    callback = config.get("configurable", {}).get("callback")
-    replan_count = state.get("replan_count", 0) + 1
-    current_index = state.get("current_task_index", 0)
-    tasks = state.get("tasks", [])
-    context = state.get("context", [])
-    error = state.get("error", "Unknown error")
-    prompt = state.get("prompt", "")
-
-    failed_task = tasks[current_index] if current_index < len(tasks) else {}
-    failed_subtask = failed_task.get("subtask", "Unknown step")
-
-    if callback:
-        await callback(websocket_message(
-            type="status",
-            content=f"⚠️ Step failed ({error}). Self-healing replanning attempt {replan_count}/2..."
-        ))
-
-    from backend.agents.orchestrator_agent import orchestrator
-    loop = asyncio.get_running_loop()
-    new_subtasks = await loop.run_in_executor(
-        None, orchestrator.replan_subtasks, prompt, failed_subtask, error, context
-    )
-
-    # Keep completed tasks and append new replanned tasks
-    completed_tasks = tasks[:current_index]
-    merged_tasks = completed_tasks + new_subtasks
-
-    if callback:
-        await callback(websocket_message(type="tasks_updated", content=merged_tasks))
-
-    return {
-        "tasks": merged_tasks,
-        "current_task_index": current_index,
-        "replan_count": replan_count,
-        "error": ""
-    }
+    return {"context": context, "current_task_index": current_index + 1}
 
 def router_node(state: OpenAgentsState):
     if state.get("error"):
-        if state.get("replan_count", 0) < 2:
-            return "replan_node"
-        return "final_node"
+        return END
     
     tasks = state.get("tasks", [])
     current_index = state.get("current_task_index", 0)
@@ -369,16 +299,13 @@ def router_node(state: OpenAgentsState):
     if current_index < len(tasks):
         return "execute_subtask_node"
     
-    return "final_node"
+    return END
 
 async def final_node(state: OpenAgentsState, config: RunnableConfig):
     callback = config.get("configurable", {}).get("callback")
     if not state.get("error"):
         if callback:
-            await callback(websocket_message(type="complete", content="All workflow goals completed successfully."))
-    else:
-        if callback:
-            await callback(websocket_message(type="error", content=f"Workflow halted: {state.get('error')}"))
+            await callback(websocket_message(type="complete", content="All tasks completed successfully."))
     return {}
 
 # --- Graph Compilation ---
@@ -386,7 +313,6 @@ workflow = StateGraph(OpenAgentsState)
 
 workflow.add_node("decompose_task_node", decompose_task_node)
 workflow.add_node("execute_subtask_node", execute_subtask_node)
-workflow.add_node("replan_node", replan_node)
 workflow.add_node("final_node", final_node)
 
 workflow.add_edge(START, "decompose_task_node")
@@ -395,8 +321,7 @@ workflow.add_conditional_edges(
     router_node,
     {
         "execute_subtask_node": "execute_subtask_node",
-        "replan_node": "replan_node",
-        "final_node": "final_node"
+        END: END
     }
 )
 workflow.add_conditional_edges(
@@ -404,11 +329,9 @@ workflow.add_conditional_edges(
     router_node,
     {
         "execute_subtask_node": "execute_subtask_node",
-        "replan_node": "replan_node",
-        "final_node": "final_node"
+        END: "final_node"
     }
 )
-workflow.add_edge("replan_node", "execute_subtask_node")
 workflow.add_edge("final_node", END)
 
 multi_agent_graph = workflow.compile()
@@ -422,8 +345,14 @@ async def execute(prompt, base_directory, history: List[Dict] = [], callback=Non
         "current_task_index": 0,
         "context": [],
         "error": "",
-        "status": "",
-        "replan_count": 0
+        "status": ""
     }
     config = {"configurable": {"callback": callback}}
+    
     await multi_agent_graph.ainvoke(initial_state, config=config)
+
+async def main():
+    await execute("Web Search about AI and save the results to `results.md`.", base_directory=".")
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   SquarePen, 
@@ -7,8 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  Puzzle,
-  Sparkles,
   Trash2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -19,9 +17,13 @@ import gsap from 'gsap';
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { chats, activeChatId, setActiveChat, addChat, removeChat } = useChatStore();
+  const { chats, activeChatId, setActiveChat, addChat, removeChat, loadConversations } = useChatStore();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
 
   return (
     <motion.aside
@@ -64,8 +66,10 @@ const Sidebar: React.FC = () => {
           {chats.map((chat) => {
             const isActive = activeChatId === chat.id && location.pathname === "/";
             return (
-            <motion.button
+            <motion.div
               key={chat.id}
+              role="button"
+              tabIndex={0}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
@@ -80,8 +84,14 @@ const Sidebar: React.FC = () => {
                 setActiveChat(chat.id);
                 navigate("/");
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  setActiveChat(chat.id);
+                  navigate("/");
+                }
+              }}
               className={cn(
-                "relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group/item",
+                "relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors group/item cursor-pointer select-none",
                 isActive
                   ? "text-foreground" 
                   : "text-muted-foreground hover:text-foreground",
@@ -96,27 +106,27 @@ const Sidebar: React.FC = () => {
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
                 />
               )}
-              <div className="relative z-10 flex items-center justify-between gap-2 w-full">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <MessageSquare size={18} className="flex-shrink-0" />
-                  {!isCollapsed && (
-                    <span className="text-sm font-medium truncate text-left">{chat.title}</span>
-                  )}
-                </div>
+              <div className="relative z-10 flex items-center gap-3 w-full min-w-0">
+                <MessageSquare size={18} className="flex-shrink-0" />
+                {!isCollapsed && (
+                  <span className="text-sm font-medium truncate text-left flex-1">{chat.title}</span>
+                )}
                 {!isCollapsed && (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       removeChat(chat.id);
                     }}
-                    className="opacity-0 group-hover/item:opacity-100 p-1 hover:text-destructive hover:bg-destructive/10 rounded transition-all"
-                    title="Delete Chat"
+                    className="opacity-0 group-hover/item:opacity-100 p-1 hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-md transition-all flex-shrink-0"
+                    title="Delete conversation"
+                    aria-label={`Delete conversation ${chat.title}`}
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
-            </motion.button>
+            </motion.div>
           )})}
         </AnimatePresence>
       </div>
@@ -127,36 +137,6 @@ const Sidebar: React.FC = () => {
           <ThemeToggle isCollapsed={isCollapsed} />
         </div>
         
-        <button 
-          onClick={() => navigate("/skills")}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover transition-all",
-            location.pathname === "/skills" 
-              ? "bg-secondary text-secondary-foreground" 
-              : "text-muted-foreground hover:text-foreground",
-            isCollapsed ? "justify-center" : ""
-          )}
-          title="Skills (~/.openagents/skills)"
-        >
-          <Sparkles size={18} className="text-primary" />
-          {!isCollapsed && <span className="text-sm font-medium">Skills</span>}
-        </button>
-
-        <button 
-          onClick={() => navigate("/mods")}
-          className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-hover transition-all",
-            location.pathname === "/mods" 
-              ? "bg-secondary text-secondary-foreground" 
-              : "text-muted-foreground hover:text-foreground",
-            isCollapsed ? "justify-center" : ""
-          )}
-          title="Claude Mods"
-        >
-          <Puzzle size={18} />
-          {!isCollapsed && <span className="text-sm font-medium">Mods</span>}
-        </button>
-
         <button 
           onClick={() => navigate("/settings")}
           className={cn(

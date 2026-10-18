@@ -7,35 +7,29 @@ project_root = os.path.dirname(current_dir)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.db.database import engine, Base, get_db
-from backend.models.models import AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
+from backend.db.database import engine, Base, get_db, SessionLocal
+from backend.models.models import Conversation, AgentConfig, agent_config_create, agent_config_response, websocket_message, UserRequest
 from backend.services.websocket_manager import manager
+from backend.services import conversation_service
 from backend.chat_flow import handle_general_chat
 from backend.agent_flow import execute
 from backend.routers.agent_config import router as config_router, init_db
 from backend.routers.auth import router as auth_router
-from backend.routers.mods import router as mods_router
-from backend.routers.skills import router as skills_router
-from backend.routers.history import router as history_router
-from backend.routers.config import router as system_config_router
-from backend.services.history_service import HistoryService
-from backend.mods.mod_manager import ModManager
+from backend.routers.conversations import router as conversations_router
 
 import json
-import time
 import asyncio
+import uuid
+import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
-# Create database tables in ~/.openagents/openagents.db
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
 # Initialize database with default configs
 init_db()
-
-# Initialize ModManager
-ModManager.get_instance()
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -51,10 +45,7 @@ app.add_middleware(
 
 app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
-app.include_router(mods_router, tags=["mods"])
-app.include_router(skills_router)
-app.include_router(history_router)
-app.include_router(system_config_router)
+app.include_router(conversations_router)
 
 active_tasks: Dict[str, asyncio.Task] = {}
 
@@ -86,78 +77,53 @@ async def websocket_endpoint(websocket: WebSocket):
                 base_directory = request.base_directory
                 chat_mode = getattr(request, 'chat_mode', 'multiagent')
 
-                recorded_messages = list(history) if history else []
-                recorded_messages.append({
-                    "id": f"msg_{int(time.time() * 1000)}",
-                    "role": "user",
-                    "content": prompt,
-                    "timestamp": int(time.time() * 1000)
-                })
+                # Persist user prompt to conversation storage
+                db_session = SessionLocal()
+                try:
+                    conversation_service.append_message_to_conversation(
+                        db_session,
+                        convo_id=session_id,
+                        message={
+                            "id": str(uuid.uuid4())[:8],
+                            "role": "user",
+                            "content": prompt,
+                            "timestamp": int(datetime.datetime.now().timestamp() * 1000)
+                        },
+                        auto_title=True
+                    )
+                except Exception as e:
+                    print(f"Error persisting user message to conversation: {e}")
+                finally:
+                    db_session.close()
 
                 async def streaming_callback(event: websocket_message):
                     event.session_id = session_id
                     await manager.send_json_safe(event, websocket)
-                    if event.type in ["agent_response", "tool_output", "error"]:
-                        recorded_messages.append({
-                            "id": f"msg_{int(time.time() * 1000)}",
-                            "role": "assistant",
-                            "content": event.content,
-                            "type": event.type,
-                            "agentName": event.agent_name,
-                            "timestamp": int(time.time() * 1000)
-                        })
+
+                    # Persist assistant responses and tool outputs
+                    if event.type in ("agent_response", "tool_output", "error"):
+                        callback_db = SessionLocal()
+                        try:
+                            conversation_service.append_message_to_conversation(
+                                callback_db,
+                                convo_id=session_id,
+                                message={
+                                    "id": str(uuid.uuid4())[:8],
+                                    "role": "assistant",
+                                    "content": event.content,
+                                    "type": event.type,
+                                    "agentName": event.agent_name,
+                                    "timestamp": int(datetime.datetime.now().timestamp() * 1000)
+                                },
+                                auto_title=False
+                            )
+                        except Exception as err:
+                            print(f"Error persisting assistant message: {err}")
+                        finally:
+                            callback_db.close()
 
                 async def run_task():
                     try:
-                        nonlocal prompt
-
-                        # 1. Check for instant in-process slash commands
-                        if prompt.strip().startswith("/"):
-                            cmd_ctx = await ModManager.get_instance().trigger_custom_command(prompt, session_id=session_id)
-                            if cmd_ctx and cmd_ctx.command_output is not None:
-                                await streaming_callback(websocket_message(
-                                    type="agent_response",
-                                    agent_name="ClaudeMods",
-                                    content=cmd_ctx.command_output,
-                                    session_id=session_id
-                                ))
-                                hud_widgets = ModManager.get_instance().get_hud_widgets()
-                                if hud_widgets:
-                                    await streaming_callback(websocket_message(
-                                        type="mod_hud",
-                                        content=json.dumps(hud_widgets),
-                                        session_id=session_id
-                                    ))
-                                return
-
-                        # 2. Trigger mod lifecycle before prompt
-                        mod_ctx = await ModManager.get_instance().trigger_before_prompt(prompt, session_id=session_id)
-                        if mod_ctx.cancelled:
-                            await streaming_callback(websocket_message(
-                                type="error",
-                                content=f"Mod Blocked Execution: {mod_ctx.cancel_reason or 'Operation aborted by active mod.'}",
-                                session_id=session_id
-                            ))
-                            return
-
-                        for log_msg in mod_ctx.logs:
-                            await streaming_callback(websocket_message(
-                                type="status",
-                                content=f"[Mod] {log_msg}",
-                                session_id=session_id
-                            ))
-
-                        # Send live HUD updates if any widgets exist
-                        hud_widgets = ModManager.get_instance().get_hud_widgets()
-                        if hud_widgets:
-                            await streaming_callback(websocket_message(
-                                type="mod_hud",
-                                content=json.dumps(hud_widgets),
-                                session_id=session_id
-                            ))
-
-                        prompt = mod_ctx.prompt or prompt
-
                         if chat_mode == "chat":
                             await handle_general_chat(prompt, history, streaming_callback)
                         else:
@@ -168,17 +134,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     finally:
                         if session_id in active_tasks:
                             del active_tasks[session_id]
-                        # Persist conversation to ~/.openagents/history/
-                        try:
-                            title = prompt[:45] + ("..." if len(prompt) > 45 else "")
-                            HistoryService.save_session(
-                                session_id=session_id,
-                                title=title,
-                                messages=recorded_messages,
-                                base_directory=base_directory
-                            )
-                        except Exception as e:
-                            print(f"[openagents] Error saving session to ~/.openagents/history: {e}")
 
                 task = asyncio.create_task(run_task())
                 active_tasks[session_id] = task

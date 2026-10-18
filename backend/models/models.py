@@ -45,6 +45,17 @@ class MCPServer(Base):
     url = Column(String, nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    convo_id = Column(String, primary_key=True, index=True)
+    title = Column(String, default="New Chat")
+    file_path = Column(String)
+    message_count = Column(Integer, default=0)
+    last_message_preview = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
 # Pydantic Models
 class agent_config_base(BaseModel):
     llm_provider: str
@@ -119,3 +130,34 @@ class mcp_server_response(mcp_server_base):
 
     class Config:
         from_attributes = True
+
+# Conversation Models
+class ConversationSummary(BaseModel):
+    convo_id: str
+    title: str
+    message_count: int
+    last_message_preview: Optional[str] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class ConversationCreate(BaseModel):
+    convo_id: Optional[str] = None
+    title: Optional[str] = "New Chat"
+    base_directory: Optional[str] = None
+    chat_mode: Optional[str] = "multiagent"
+
+class ConversationUpdate(BaseModel):
+    title: Optional[str] = None
+    base_directory: Optional[str] = None
+
+class ConversationDetail(BaseModel):
+    convo_id: str
+    title: str
+    created_at: str
+    updated_at: str
+    base_directory: Optional[str] = None
+    chat_mode: Optional[str] = "multiagent"
+    messages: List[Dict[str, Any]] = []

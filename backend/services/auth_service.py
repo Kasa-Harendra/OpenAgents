@@ -34,10 +34,13 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
 ]
 
-from backend.config.openagents_dir import get_credentials_dir
+from backend.db.database import OPENAGENTS_DIR
 
-TOKEN_FILE = str(get_credentials_dir() / 'token.json')
-CREDENTIALS_FILE = str(get_credentials_dir() / 'credentials.json')
+CREDENTIALS_DIR = os.path.join(OPENAGENTS_DIR, "credentials")
+os.makedirs(CREDENTIALS_DIR, exist_ok=True)
+
+TOKEN_FILE = os.path.join(CREDENTIALS_DIR, "token.json")
+CREDENTIALS_FILE = os.path.join(CREDENTIALS_DIR, "credentials.json")
 
 class AuthService:
     @staticmethod

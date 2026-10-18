@@ -43,32 +43,31 @@ frontend/.vite/
 *.sqlite
 openagents.db
 
-# Environment & Credentials
+# Environment/Secrets
 .env
 .env.local
 .env.*.local
-backend/credentials/
-*.pem
-*.key
-token.json
 
-# Standardized OpenAgents Local Directory
-.openagents/
-
-# IDE & OS
+# IDE/OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 *.swp
 
-# Logs & Diagnostics
+# Logs
 *.log
 backend/*.log
 
-# Temporary & Scratch
+# Project Specific
 backup/
-backup2/
 trash_agents/
 openwork/
 test/
+token.json
+backend/credentials/credentials.json
+backup2/
+open-agents.mov
+MCP.pdf
+test.py
+inject_prompts.py

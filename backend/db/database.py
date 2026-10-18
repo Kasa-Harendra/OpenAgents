@@ -9,9 +9,13 @@ if project_root not in sys.path:
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from backend.config.openagents_dir import get_database_path
+import os
 
-DATABASE_URL = f"sqlite:///{get_database_path()}"
+OPENAGENTS_DIR = os.path.expanduser(os.environ.get("OPENAGENTS_DIR", "~/.openagents"))
+os.makedirs(OPENAGENTS_DIR, exist_ok=True)
+
+DATABASE_PATH = os.environ.get("OPENAGENTS_DB_PATH", os.path.join(OPENAGENTS_DIR, "openagents.db"))
+DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 engine = create_engine(
     DATABASE_URL, connect_args={"check_same_thread": False}

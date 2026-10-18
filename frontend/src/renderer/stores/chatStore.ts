@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import toast from '../utils/toast';
+import { conversationApi } from '../lib/api';
 
 export interface Message {
   id: string;
@@ -25,12 +26,14 @@ interface ChatState {
   activeChatId: string | null;
   socket: WebSocket | null;
   isConnected: boolean;
-  addChat: (title: string) => void;
-  removeChat: (id: string) => void;
+  loadConversations: () => Promise<void>;
+  loadConversationDetails: (id: string) => Promise<void>;
+  addChat: (title?: string) => Promise<string>;
+  removeChat: (id: string) => Promise<void>;
   setActiveChat: (id: string | null) => void;
   addMessage: (chatId: string, role: 'user' | 'assistant', content: any, type?: Message['type'], agentName?: string) => void;
   updateLastMessage: (chatId: string, content: any, type?: Message['type'], isAppend?: boolean) => void;
-  updateChatTitle: (id: string, title: string) => void;
+  updateChatTitle: (id: string, title: string) => Promise<void>;
   connect: () => void;
   disconnect: () => void;
   sendMessage: (content: string) => void;
@@ -39,11 +42,6 @@ interface ChatState {
   setIsTyping: (chatId: string, isTyping: boolean) => void;
   chatMode: 'multiagent' | 'chat';
   setChatMode: (mode: 'multiagent' | 'chat') => void;
-  hudWidgets: Array<{ id: string; label: string; value: string; icon?: string; color?: string; progress?: number }>;
-  setHudWidgets: (widgets: any[]) => void;
-  activeTasks: Array<{ id?: string; agent: string; subtask: string; status?: 'pending' | 'in_progress' | 'completed' | 'failed' }>;
-  setActiveTasks: (tasks: any[]) => void;
-  loadSessions: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -52,109 +50,134 @@ export const useChatStore = create<ChatState>((set, get) => ({
   socket: null,
   isConnected: false,
   chatMode: 'multiagent',
-  hudWidgets: [],
-  setHudWidgets: (widgets) => set({ hudWidgets: widgets }),
-  activeTasks: [],
-  setActiveTasks: (tasks) => set({ activeTasks: tasks }),
-
-  loadSessions: async () => {
+  
+  loadConversations: async () => {
     try {
-      const res = await fetch('http://localhost:8000/history/sessions');
-      if (res.ok) {
-        const sessions = await res.json();
-        if (Array.isArray(sessions) && sessions.length > 0) {
-          const mappedChats: Chat[] = sessions.map((s: any) => ({
-            id: s.id,
-            title: s.title || 'Chat',
-            messages: [],
-            createdAt: s.created_at || Date.now(),
-            updatedAt: s.updated_at || Date.now(),
-            baseDirectory: s.base_directory || null,
-            isTyping: false,
-          }));
+      const convos = await conversationApi.listConversations();
+      const currentChats = get().chats;
+      const mergedChats: Chat[] = convos.map((c) => {
+        const existing = currentChats.find((x) => x.id === c.convo_id);
+        return {
+          id: c.convo_id,
+          title: c.title,
+          messages: existing?.messages || [],
+          createdAt: new Date(c.created_at).getTime(),
+          updatedAt: new Date(c.updated_at).getTime(),
+          baseDirectory: existing?.baseDirectory || null,
+          isTyping: existing?.isTyping || false,
+        };
+      });
 
-          set((state) => {
-            const existingIds = new Set(state.chats.map((c) => c.id));
-            const newOnes = mappedChats.filter((c) => !existingIds.has(c.id));
-            const merged = [...state.chats, ...newOnes];
-            const activeId = state.activeChatId || (merged.length > 0 ? merged[0].id : null);
-            return {
-              chats: merged,
-              activeChatId: activeId
-            };
-          });
+      set({ chats: mergedChats });
 
-          const active = get().activeChatId;
-          if (active) {
-            get().setActiveChat(active);
-          }
-        }
+      const currentActiveId = get().activeChatId;
+      if (!currentActiveId && mergedChats.length > 0) {
+        get().setActiveChat(mergedChats[0].id);
+      } else if (currentActiveId) {
+        get().loadConversationDetails(currentActiveId);
       }
-    } catch (e) {
-      console.error('Failed to fetch ~/.openagents/history/sessions:', e);
+    } catch (err) {
+      console.error('Failed to load conversations from backend:', err);
     }
   },
-  
+
+  loadConversationDetails: async (id: string) => {
+    try {
+      const details = await conversationApi.getConversation(id);
+      set((state) => ({
+        chats: state.chats.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                title: details.title || c.title,
+                messages: details.messages || [],
+                baseDirectory: details.base_directory ?? c.baseDirectory,
+              }
+            : c
+        ),
+      }));
+    } catch (err) {
+      console.error(`Failed to load details for conversation ${id}:`, err);
+    }
+  },
+
   setBaseDirectory: (path) => set((state) => ({
     chats: state.chats.map((chat) =>
       chat.id === state.activeChatId ? { ...chat, baseDirectory: path } : chat
     ),
   })),
+
   setIsTyping: (chatId, isTyping) => set((state) => ({
     chats: state.chats.map((chat) =>
       chat.id === chatId ? { ...chat, isTyping } : chat
     ),
   })),
+
   setChatMode: (mode) => set({ chatMode: mode }),
   
-  addChat: (_title) => {
-    const newChat: Chat = {
-      id: crypto.randomUUID(),
-      title: 'New Chat',
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      baseDirectory: null,
-      isTyping: false,
-    };
-    set((state) => ({
-      chats: [newChat, ...state.chats],
-      activeChatId: newChat.id,
-    }));
-  },
-  
-  removeChat: (id) => {
-    set((state) => ({
-      chats: state.chats.filter((c) => c.id !== id),
-      activeChatId: state.activeChatId === id ? null : state.activeChatId,
-    }));
+  addChat: async (title?: string) => {
     try {
-      fetch(`http://localhost:8000/history/sessions/${id}`, { method: 'DELETE' }).catch(() => {});
-    } catch {}
+      const created = await conversationApi.createConversation({
+        title: title || 'New Chat',
+      });
+      const newChat: Chat = {
+        id: created.convo_id,
+        title: created.title,
+        messages: [],
+        createdAt: new Date(created.created_at).getTime(),
+        updatedAt: new Date(created.updated_at).getTime(),
+        baseDirectory: null,
+        isTyping: false,
+      };
+      set((state) => ({
+        chats: [newChat, ...state.chats.filter((c) => c.id !== newChat.id)],
+        activeChatId: newChat.id,
+      }));
+      return newChat.id;
+    } catch (err) {
+      console.error('Failed to create conversation on backend, creating locally:', err);
+      const fallbackChat: Chat = {
+        id: crypto.randomUUID(),
+        title: title || 'New Chat',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        baseDirectory: null,
+        isTyping: false,
+      };
+      set((state) => ({
+        chats: [fallbackChat, ...state.chats],
+        activeChatId: fallbackChat.id,
+      }));
+      return fallbackChat.id;
+    }
   },
   
-  setActiveChat: async (id) => {
+  removeChat: async (id: string) => {
+    try {
+      await conversationApi.deleteConversation(id);
+    } catch (err) {
+      console.error(`Failed to delete conversation ${id} from server:`, err);
+    }
+    set((state) => {
+      const remainingChats = state.chats.filter((c) => c.id !== id);
+      const newActiveId = state.activeChatId === id
+        ? (remainingChats.length > 0 ? remainingChats[0].id : null)
+        : state.activeChatId;
+      return {
+        chats: remainingChats,
+        activeChatId: newActiveId,
+      };
+    });
+    toast.success('Conversation deleted');
+  },
+  
+  setActiveChat: (id) => {
     set({ activeChatId: id });
-    if (!id) return;
-    const chat = get().chats.find((c) => c.id === id);
-    if (chat && chat.messages.length === 0) {
-      try {
-        const res = await fetch(`http://localhost:8000/history/sessions/${id}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data.messages)) {
-            set((state) => ({
-              chats: state.chats.map((c) =>
-                c.id === id
-                  ? { ...c, messages: data.messages, baseDirectory: data.base_directory ?? c.baseDirectory }
-                  : c
-              ),
-              activeTasks: data.tasks || state.activeTasks
-            }));
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load session messages from ~/.openagents/history:', e);
+    if (id) {
+      const chat = get().chats.find((c) => c.id === id);
+      if (chat && chat.messages.length === 0) {
+        get().loadConversationDetails(id);
       }
     }
   },
@@ -200,12 +223,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
   
-  updateChatTitle: (id, title) => {
+  updateChatTitle: async (id, title) => {
     set((state) => ({
       chats: state.chats.map((chat) =>
         chat.id === id ? { ...chat, title } : chat
       ),
     }));
+    try {
+      await conversationApi.updateConversation(id, { title });
+    } catch (err) {
+      console.error(`Failed to sync updated title for ${id}:`, err);
+    }
   },
 
   connect: () => {
@@ -217,7 +245,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     newSocket.onopen = () => {
       console.log('WebSocket Connected');
       set({ isConnected: true });
-      get().loadSessions();
     };
 
     newSocket.onclose = () => {
@@ -248,25 +275,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!currentChat) return;
         
         const lastMsg = currentChat.messages[currentChat.messages.length - 1];
-
-        if (type === 'mod_hud') {
-          try {
-            const widgets = typeof content === 'string' ? JSON.parse(content) : content;
-            if (Array.isArray(widgets)) {
-              set({ hudWidgets: widgets });
-            }
-          } catch (e) {
-            console.error('Failed to parse mod_hud message:', e);
-          }
-          return;
-        }
-
-        if (type === 'tasks_decomposed' || type === 'tasks_updated') {
-          if (Array.isArray(content)) {
-            set({ activeTasks: content });
-          }
-          return;
-        }
 
         if (type === 'agent_error') {
           // Show agent errors as toasts and don't add to chat to avoid clutter
