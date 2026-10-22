@@ -682,20 +682,32 @@ class OAuthManager:
 
         return env
 
-    def probe_endpoint(self, url: str) -> Dict[str, Any]:
+    def probe_endpoint(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
-        Inspects an SSE/HTTP MCP endpoint. If it returns 401 Unauthorized,
-        parses WWW-Authenticate and RFC 9728 OAuth protected resource metadata
-        to identify the required authorization server.
+        Inspects an SSE/HTTP MCP endpoint dynamically without hardcoded URLs.
+        If it returns 401 Unauthorized, parses WWW-Authenticate and RFC 9728 OAuth
+        protected resource metadata to identify the required authorization server.
         """
         import re
         from urllib.parse import urlparse
 
         if not url or not url.startswith(("http://", "https://")):
-            return {"auth_required": False, "error": "Invalid URL"}
+            return {"status": "issue", "auth_required": False, "message": "Invalid or missing HTTP/HTTPS URL"}
+
+        req_headers = dict(headers or {})
+        if "Accept" not in req_headers:
+            req_headers["Accept"] = "text/event-stream, application/json, */*"
 
         try:
-            res = requests.get(url, timeout=6)
+            res = requests.get(url, headers=req_headers, timeout=6)
+            if res.status_code in [200, 204]:
+                return {
+                    "status": "online",
+                    "auth_required": False,
+                    "status_code": res.status_code,
+                    "message": "Server is online and responding (HTTP 200)"
+                }
+
             if res.status_code == 401:
                 auth_header = res.headers.get("www-authenticate", "")
                 match = re.search(r'resource_metadata="([^"]+)"', auth_header)
@@ -722,16 +734,12 @@ class OAuthManager:
                         except Exception:
                             continue
 
-                provider = "generic"
+                provider = "custom"
                 resource_name = "Remote MCP Server"
                 auth_servers = []
                 scopes = []
                 auth_endpoint = None
                 token_endpoint = None
-
-                if "github" in url.lower() or "copilot" in url.lower() or (meta_url and "github" in meta_url.lower()):
-                    provider = "github"
-                    resource_name = "GitHub MCP Server"
 
                 if meta_url:
                     try:
@@ -767,7 +775,29 @@ class OAuthManager:
 
                 has_token = bool(self.get_valid_token(provider)) if provider != "generic" else False
 
+                # If we have a token and didn't supply it yet, test if token authenticates successfully
+                if has_token and "Authorization" not in req_headers:
+                    active_token = self.get_valid_token(provider)
+                    if active_token:
+                        try:
+                            retry_headers = dict(req_headers)
+                            retry_headers["Authorization"] = f"Bearer {active_token}"
+                            retry_res = requests.get(url, headers=retry_headers, timeout=6)
+                            if retry_res.status_code in [200, 204, 307, 405]:
+                                return {
+                                    "status": "online",
+                                    "auth_required": False,
+                                    "provider": provider,
+                                    "resource_name": resource_name,
+                                    "has_token": True,
+                                    "status_code": retry_res.status_code,
+                                    "message": f"Authenticated with {provider.upper()} & Online"
+                                }
+                        except Exception:
+                            pass
+
                 return {
+                    "status": "auth_required",
                     "auth_required": True,
                     "provider": provider,
                     "resource_name": resource_name,
@@ -777,21 +807,32 @@ class OAuthManager:
                     "auth_endpoint": auth_endpoint,
                     "token_endpoint": token_endpoint,
                     "has_token": has_token,
-                    "status_code": 401
+                    "status_code": 401,
+                    "message": f"Requires {provider.upper()} authorization for {resource_name}"
                 }
-            return {"auth_required": False, "status_code": res.status_code}
-        except Exception as e:
-            # If domain indicates githubcopilot.com, still detect as github
-            if "githubcopilot.com" in url.lower() or "github.com" in url.lower():
-                has_token = bool(self.get_valid_token("github"))
+
+            if res.status_code in [307, 308, 405]:
+                # Endpoint exists and responds (e.g. GET not allowed because POST is required for JSON-RPC)
                 return {
-                    "auth_required": True,
-                    "provider": "github",
-                    "resource_name": "GitHub MCP Server",
-                    "has_token": has_token,
-                    "status_code": 401
+                    "status": "online",
+                    "auth_required": False,
+                    "status_code": res.status_code,
+                    "message": "Endpoint is active and reachable"
                 }
-            return {"auth_required": False, "error": str(e)}
+
+            return {
+                "status": "issue",
+                "auth_required": False,
+                "status_code": res.status_code,
+                "message": f"Server returned HTTP {res.status_code}: {res.reason}"
+            }
+        except Exception as e:
+            return {
+                "status": "issue",
+                "auth_required": False,
+                "error": str(e),
+                "message": f"Connection failed: {str(e)}"
+            }
 
 
 oauth_manager = OAuthManager()

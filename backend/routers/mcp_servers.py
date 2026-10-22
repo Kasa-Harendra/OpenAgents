@@ -144,10 +144,110 @@ def get_mcp_presets():
         enriched.append(p_copy)
     return enriched
 
+class CheckServerRequest(BaseModel):
+    server_id: Optional[str] = None
+    name: Optional[str] = "MCP Server"
+    type: str = "sse"  # 'stdio' or 'sse'
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+
 @router.post("/probe")
 def probe_mcp_server(data: ProbeRequest):
-    """Probe an SSE/HTTP MCP endpoint to detect if OAuth authorization is required."""
+    """Probe an SSE/HTTP MCP endpoint dynamically to detect if OAuth authorization is required."""
     return oauth_manager.probe_endpoint(data.url)
+
+@router.post("/check")
+def check_mcp_server(data: CheckServerRequest, db: Session = Depends(get_db)):
+    """Dynamically tests if an MCP server is working, detects if auth is required, and reports online / issue status."""
+    server_id = data.server_id
+    server_type = data.type.lower()
+    
+    server_record = None
+    if server_id:
+        server_record = db.query(MCPServer).filter(MCPServer.id == server_id).first()
+        if server_record:
+            if not data.url and server_record.url:
+                data.url = server_record.url
+            if not data.command and server_record.command:
+                data.command = server_record.command
+            if not data.env and server_record.env:
+                data.env = server_record.env
+            server_type = server_record.type
+    
+    status_result = "issue"
+    message = "Unknown error"
+    probe_details = {}
+
+    if server_type == "sse":
+        if not data.url:
+            return {"status": "issue", "message": "Server SSE URL is required"}
+        
+        # Prepare headers
+        req_headers = {}
+        for k, v in (data.env or {}).items():
+            if k.lower() == "authorization" and v:
+                req_headers["Authorization"] = v
+            elif (k.upper() in ["GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "SLACK_BOT_TOKEN", "TOKEN"]) and v:
+                if "Authorization" not in req_headers:
+                    req_headers["Authorization"] = f"Bearer {v}"
+        
+        probe_res = oauth_manager.probe_endpoint(data.url, headers=req_headers)
+        probe_details = probe_res
+        status_result = probe_res.get("status", "issue")
+        message = probe_res.get("message", "Checked")
+    else:
+        # stdio
+        cmd = data.command
+        if not cmd:
+            return {"status": "issue", "message": "Command is required for stdio server"}
+        
+        import shutil, subprocess
+        bin_path = shutil.which(cmd.strip())
+        if not bin_path:
+            status_result = "issue"
+            message = f"Command '{cmd}' not found on system PATH"
+        else:
+            try:
+                subprocess.run([bin_path, "--version"], capture_output=True, text=True, timeout=3)
+                status_result = "online"
+                message = f"Executable '{cmd}' is available and ready"
+            except subprocess.TimeoutExpired:
+                status_result = "online"
+                message = f"Executable '{cmd}' started successfully"
+            except Exception as e:
+                status_result = "issue"
+                message = f"Failed to execute command: {str(e)}"
+    
+    if server_record:
+        server_record.status = status_result
+        server_record.status_message = message
+        db.commit()
+    
+    return {
+        "status": status_result,
+        "message": message,
+        **probe_details
+    }
+
+@router.post("/{server_id}/check")
+def check_registered_server(server_id: str, db: Session = Depends(get_db)):
+    """Run live connection check for a specific registered MCP server."""
+    server = db.query(MCPServer).filter(MCPServer.id == server_id).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP server not found.")
+    
+    req = CheckServerRequest(
+        server_id=server.id,
+        name=server.name,
+        type=server.type,
+        url=server.url,
+        command=server.command,
+        args=server.args,
+        env=server.env
+    )
+    return check_mcp_server(req, db)
 
 @router.get("", response_model=List[mcp_server_response])
 def list_mcp_servers(db: Session = Depends(get_db)):
@@ -202,7 +302,9 @@ def register_mcp_server(data: mcp_server_create, db: Session = Depends(get_db)):
         command=data.command.strip() if data.command else None,
         args=data.args or [],
         env=initial_env,
-        url=data.url.strip() if data.url else None
+        url=data.url.strip() if data.url else None,
+        status=data.status or "online",
+        status_message=data.status_message or "Registered"
     )
     
     db.add(new_server)
@@ -256,6 +358,10 @@ def update_mcp_server(server_id: str, update_data: mcp_server_update, db: Sessio
         server.env = update_data.env
     if update_data.url is not None:
         server.url = update_data.url.strip() if update_data.url else None
+    if update_data.status is not None:
+        server.status = update_data.status
+    if update_data.status_message is not None:
+        server.status_message = update_data.status_message
         
     server.updated_at = datetime.datetime.now(datetime.timezone.utc)
     db.commit()

@@ -29,7 +29,8 @@ import {
   Layers,
   FileJson,
   ShieldAlert,
-  Loader2
+  Loader2,
+  Play
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -77,6 +78,8 @@ export interface RegisteredMCPServer {
   args?: string[] | null;
   env?: Record<string, string> | null;
   url?: string | null;
+  status?: string | null;
+  status_message?: string | null;
   updated_at?: string;
 }
 
@@ -253,6 +256,92 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // Server Health / Run Test State
+  const [runningCheckId, setRunningCheckId] = useState<string | null>(null);
+  const [modalCheckStatus, setModalCheckStatus] = useState<{
+    status: 'online' | 'issue' | 'auth_required' | null;
+    message?: string;
+    checking: boolean;
+  }>({ status: null, checking: false });
+
+  const handleRunCheckServerInModal = async () => {
+    if (mcpForm.type === 'sse' && !mcpForm.url.trim()) {
+      toast.error('Please enter an SSE URL to run connection check');
+      return;
+    }
+    if (mcpForm.type === 'stdio' && !mcpForm.command.trim()) {
+      toast.error('Please enter a command to run check');
+      return;
+    }
+
+    setModalCheckStatus({ status: null, checking: true, message: 'Connecting to server...' });
+
+    const parsedArgs = mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [];
+    const envObj: Record<string, string> = {};
+    for (const item of mcpForm.env) {
+      if (item.key.trim()) {
+        envObj[item.key.trim()] = item.value;
+      }
+    }
+
+    try {
+      const res = await axios.post(`${BASE_URL}/mcp-servers/check`, {
+        server_id: editingMcpId || undefined,
+        name: mcpForm.name.trim() || 'MCP Server',
+        type: mcpForm.type,
+        url: mcpForm.type === 'sse' ? mcpForm.url.trim() : null,
+        command: mcpForm.type === 'stdio' ? mcpForm.command.trim() : null,
+        args: mcpForm.type === 'stdio' ? parsedArgs : [],
+        env: envObj
+      });
+
+      const data = res.data;
+      setModalCheckStatus({
+        status: data.status,
+        message: data.message,
+        checking: false
+      });
+
+      if (data.status === 'auth_required') {
+        toast.info(`Authentication required for ${data.resource_name || data.provider?.toUpperCase()}. Launching authorization flow...`);
+        handleConnectOAuth(data.provider || 'github');
+      } else if (data.status === 'online') {
+        toast.success(data.message || 'Server is online and working!');
+      } else if (data.status === 'issue') {
+        toast.error(`Server issue: ${data.message}`);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Check failed';
+      setModalCheckStatus({
+        status: 'issue',
+        message: msg,
+        checking: false
+      });
+      toast.error(`Check failed: ${msg}`);
+    }
+  };
+
+  const handleRunCheckRegisteredServer = async (server: RegisteredMCPServer) => {
+    setRunningCheckId(server.id);
+    try {
+      const res = await axios.post(`${BASE_URL}/mcp-servers/${server.id}/check`);
+      const data = res.data;
+      if (data.status === 'auth_required') {
+        toast.info(`Authentication required for ${server.name}. Launching authorization flow...`);
+        handleConnectOAuth(data.provider || 'github');
+      } else if (data.status === 'online') {
+        toast.success(`${server.name} is online and operational!`);
+      } else {
+        toast.error(`Issue with ${server.name}: ${data.message}`);
+      }
+      fetchMcpServers();
+    } catch (err: any) {
+      toast.error(`Failed to test server: ${err.message}`);
+    } finally {
+      setRunningCheckId(null);
+    }
+  };
+
   useEffect(() => {
     if (mcpForm.type === 'sse' && mcpForm.url && mcpForm.url.trim().startsWith('http')) {
       const timer = setTimeout(() => {
@@ -412,6 +501,23 @@ const SettingsPage: React.FC = () => {
               // Re-probe active URL if present to update UI to 'Authorized'
               if (mcpForm.url) {
                 probeMcpUrl(mcpForm.url);
+                // Also trigger live check on server to bring it Online
+                axios.post(`${BASE_URL}/mcp-servers/check`, {
+                  server_id: editingMcpId || undefined,
+                  name: mcpForm.name,
+                  type: mcpForm.type,
+                  url: mcpForm.url.trim(),
+                  command: mcpForm.command.trim(),
+                  args: mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [],
+                  env: {}
+                }).then(checkRes => {
+                  setModalCheckStatus({
+                    status: checkRes.data.status,
+                    message: checkRes.data.message,
+                    checking: false
+                  });
+                  fetchMcpServers();
+                }).catch(() => {});
               }
 
               // Auto-inject tokens into form and rawJson
@@ -435,6 +541,7 @@ const SettingsPage: React.FC = () => {
               }, 1600);
               fetchOAuthProviders();
               fetchMcpPresets();
+              fetchMcpServers();
             } else if (check.data.status === 'error' || check.data.status === 'expired') {
               clearInterval(intervalId);
               setOauthModal(prev => prev ? { ...prev, status: 'error', error: check.data.error || 'Authorization failed or timed out' } : null);
@@ -991,6 +1098,7 @@ const SettingsPage: React.FC = () => {
     setMcpModalTab('form');
     setRawJsonError(null);
     setProbeResult(null);
+    setModalCheckStatus({ status: null, checking: false });
     let initialForm = {
       name: '',
       type: 'stdio' as 'stdio' | 'sse',
@@ -1025,6 +1133,11 @@ const SettingsPage: React.FC = () => {
     setMcpModalTab('form');
     setRawJsonError(null);
     setProbeResult(null);
+    setModalCheckStatus({
+      status: (server.status as any) || null,
+      message: server.status_message || undefined,
+      checking: false
+    });
     const initialForm = {
       name: server.name,
       type: (server.type as 'stdio' | 'sse') || 'stdio',
@@ -1097,7 +1210,9 @@ const SettingsPage: React.FC = () => {
       command: mcpForm.type === 'stdio' ? mcpForm.command.trim() : null,
       args: mcpForm.type === 'stdio' ? parsedArgs : [],
       env: envObj,
-      url: mcpForm.type === 'sse' ? mcpForm.url.trim() : null
+      url: mcpForm.type === 'sse' ? mcpForm.url.trim() : null,
+      status: modalCheckStatus.status || (editingMcpId ? undefined : 'offline'),
+      status_message: modalCheckStatus.message || null
     };
 
     try {
@@ -1828,10 +1943,53 @@ const SettingsPage: React.FC = () => {
                               )}>
                                 {server.type}
                               </span>
+
+                              {/* Live Server Status Tag */}
+                              {server.status === 'online' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  Online
+                                </span>
+                              ) : server.status === 'auth_required' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30" title={server.status_message || 'Authentication required'}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                  Auth Required
+                                </span>
+                              ) : server.status === 'issue' ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30" title={server.status_message || 'Issue detected'}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                  Issue
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[11px] font-medium rounded-full bg-muted text-muted-foreground border border-border/40">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
+                                  Offline
+                                </span>
+                              )}
                             </div>
+                            {server.status_message && (
+                              <p className="text-[11px] text-muted-foreground truncate max-w-md">
+                                {server.status_message}
+                              </p>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Run Server Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleRunCheckRegisteredServer(server)}
+                              disabled={runningCheckId === server.id}
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-all active:scale-95 disabled:opacity-50"
+                              title="Run health check and start server"
+                            >
+                              {runningCheckId === server.id ? (
+                                <Loader2 size={13} className="animate-spin text-emerald-500" />
+                              ) : (
+                                <Play size={13} className="fill-emerald-500 text-emerald-500" />
+                              )}
+                              <span>Run</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleOpenEditMcpModal(server)}
@@ -2515,6 +2673,53 @@ const SettingsPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* Interactive Run & Live Status Bar */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/70">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-foreground">Live Status:</span>
+                    {modalCheckStatus.checking ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                        <Loader2 size={12} className="animate-spin text-primary" />
+                        Testing Connection...
+                      </span>
+                    ) : modalCheckStatus.status === 'online' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Online
+                      </span>
+                    ) : modalCheckStatus.status === 'auth_required' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30" title={modalCheckStatus.message}>
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        Auth Required
+                      </span>
+                    ) : modalCheckStatus.status === 'issue' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30" title={modalCheckStatus.message}>
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        Issue: {modalCheckStatus.message ? modalCheckStatus.message.slice(0, 32) + '...' : 'Failed'}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-muted text-muted-foreground border border-border/40">
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
+                        Ready to Test
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRunCheckServerInModal}
+                    disabled={modalCheckStatus.checking || (mcpForm.type === 'sse' && !mcpForm.url.trim()) || (mcpForm.type === 'stdio' && !mcpForm.command.trim())}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {modalCheckStatus.checking ? (
+                      <Loader2 size={13} className="animate-spin text-white" />
+                    ) : (
+                      <Play size={13} className="fill-white" />
+                    )}
+                    <span>Run & Test Server</span>
+                  </button>
+                </div>
+
                 {/* Environment Variables */}
                 <div className="space-y-2 pt-2 border-t border-border/50">
                   <div className="flex items-center justify-between">
@@ -2724,6 +2929,56 @@ const SettingsPage: React.FC = () => {
                       Sync to Form View
                     </button>
                   </div>
+                </div>
+
+                {/* Live Run & Connection Check Toolbar in Raw JSON Panel */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/70">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-foreground">Live Status:</span>
+                    {modalCheckStatus.checking ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                        <Loader2 size={12} className="animate-spin text-primary" />
+                        Testing Connection...
+                      </span>
+                    ) : modalCheckStatus.status === 'online' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Online
+                      </span>
+                    ) : modalCheckStatus.status === 'auth_required' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30" title={modalCheckStatus.message}>
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        Auth Required
+                      </span>
+                    ) : modalCheckStatus.status === 'issue' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30" title={modalCheckStatus.message}>
+                        <span className="w-2 h-2 rounded-full bg-rose-500" />
+                        Issue: {modalCheckStatus.message ? modalCheckStatus.message.slice(0, 32) + '...' : 'Failed'}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-muted text-muted-foreground border border-border/40">
+                        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60" />
+                        Ready to Test
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      syncRawJsonToForm(rawJsonInput);
+                      handleRunCheckServerInModal();
+                    }}
+                    disabled={modalCheckStatus.checking}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {modalCheckStatus.checking ? (
+                      <Loader2 size={13} className="animate-spin text-white" />
+                    ) : (
+                      <Play size={13} className="fill-white" />
+                    )}
+                    <span>Run & Test Server</span>
+                  </button>
                 </div>
 
                 {/* Dedicated Manual OAuth Trigger Hub */}

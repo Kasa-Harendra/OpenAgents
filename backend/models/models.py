@@ -58,6 +58,8 @@ class MCPServer(Base):
     args = Column(JSON, nullable=True)
     env = Column(JSON, nullable=True)
     url = Column(String, nullable=True)
+    status = Column(String, default="offline")  # 'online', 'issue', 'auth_required', 'offline'
+    status_message = Column(String, nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
 class Conversation(Base):
@@ -135,6 +137,8 @@ class mcp_server_base(BaseModel):
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
     url: Optional[str] = None
+    status: Optional[str] = "offline"
+    status_message: Optional[str] = None
 
 class mcp_server_create(mcp_server_base):
     id: Optional[str] = None
@@ -146,6 +150,8 @@ class mcp_server_update(BaseModel):
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
     url: Optional[str] = None
+    status: Optional[str] = None
+    status_message: Optional[str] = None
 
 class mcp_server_response(mcp_server_base):
     id: str

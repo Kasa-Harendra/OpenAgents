@@ -31,6 +31,21 @@ from typing import List, Dict, Any
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+def check_and_migrate_db():
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(mcp_servers)")).fetchall()]
+            if "status" not in cols:
+                conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN status VARCHAR DEFAULT 'offline'"))
+            if "status_message" not in cols:
+                conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN status_message VARCHAR DEFAULT NULL"))
+            conn.commit()
+    except Exception as e:
+        print(f"[DB Migration] Check skipped or failed: {e}")
+
+check_and_migrate_db()
+
 # Initialize database with default configs
 init_db()
 
