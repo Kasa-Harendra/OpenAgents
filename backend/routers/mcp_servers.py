@@ -12,6 +12,7 @@ from backend.models.models import (
     mcp_server_update,
     mcp_server_response
 )
+from backend.services.oauth_manager import oauth_manager
 
 router = APIRouter(prefix="/mcp-servers")
 
@@ -23,7 +24,28 @@ POPULAR_MCP_PRESETS = [
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-github"],
         "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
-        "description": "Repository management, issues, pull requests, and git search"
+        "description": "Repository management, issues, pull requests, and git search",
+        "oauth_provider": "github"
+    },
+    {
+        "id": "preset-google-drive",
+        "name": "Google Drive",
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@piotr-agier/google-drive-mcp"],
+        "env": {},
+        "description": "Read, search, upload, and organize Google Drive files and folders",
+        "oauth_provider": "google"
+    },
+    {
+        "id": "preset-gmail",
+        "name": "Gmail",
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@shinzolabs/gmail-mcp"],
+        "env": {},
+        "description": "Send emails, search messages, and manage Gmail inbox with OAuth",
+        "oauth_provider": "google"
     },
     {
         "id": "preset-filesystem",
@@ -86,19 +108,42 @@ POPULAR_MCP_PRESETS = [
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-slack"],
         "env": {"SLACK_BOT_TOKEN": "", "SLACK_TEAM_ID": ""},
-        "description": "Slack channel management and message posting"
+        "description": "Slack channel management and message posting",
+        "oauth_provider": "slack"
     }
 ]
 
 @router.get("/presets")
 def get_mcp_presets():
-    """Returns curated popular MCP server presets for quick registration."""
-    return POPULAR_MCP_PRESETS
+    """Returns curated popular MCP server presets for quick registration enriched with OAuth connection status."""
+    providers_status = {p["id"]: p for p in oauth_manager.get_providers_status()}
+    enriched = []
+    for preset in POPULAR_MCP_PRESETS:
+        p_copy = dict(preset)
+        oauth_pid = preset.get("oauth_provider")
+        if oauth_pid and oauth_pid in providers_status:
+            p_status = providers_status[oauth_pid]
+            p_copy["oauth_connected"] = p_status.get("connected", False)
+            p_copy["oauth_user"] = p_status.get("user")
+        else:
+            p_copy["oauth_connected"] = False
+            p_copy["oauth_user"] = None
+        enriched.append(p_copy)
+    return enriched
 
 @router.get("", response_model=List[mcp_server_response])
 def list_mcp_servers(db: Session = Depends(get_db)):
-    """List all registered MCP servers in the registry."""
+    """List all registered MCP servers in the registry with auto-injected OAuth envs."""
     servers = db.query(MCPServer).order_by(MCPServer.updated_at.desc()).all()
+    # Enrich with active OAuth env variables if env token is empty
+    for s in servers:
+        oauth_env = oauth_manager.get_env_for_mcp(s.name)
+        if oauth_env:
+            merged_env = dict(s.env or {})
+            for k, v in oauth_env.items():
+                if not merged_env.get(k):
+                    merged_env[k] = v
+            s.env = merged_env
     return servers
 
 @router.post("", response_model=mcp_server_response, status_code=status.HTTP_201_CREATED)

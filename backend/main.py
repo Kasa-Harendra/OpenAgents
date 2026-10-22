@@ -18,6 +18,7 @@ from backend.routers.auth import router as auth_router
 from backend.routers.conversations import router as conversations_router
 from backend.routers.custom_agents import router as custom_agents_router
 from backend.routers.mcp_servers import router as mcp_servers_router
+from backend.routers.oauth import router as oauth_router
 
 import json
 import asyncio
@@ -50,6 +51,7 @@ app.include_router(auth_router, tags=["auth"])
 app.include_router(conversations_router)
 app.include_router(custom_agents_router, tags=["custom_agents"])
 app.include_router(mcp_servers_router, tags=["mcp_servers"])
+app.include_router(oauth_router, tags=["oauth"])
 
 active_tasks: Dict[str, asyncio.Task] = {}
 

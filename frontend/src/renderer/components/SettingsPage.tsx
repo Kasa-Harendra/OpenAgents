@@ -17,7 +17,13 @@ import {
   Terminal,
   Globe,
   Key,
-  Database
+  Database,
+  ShieldCheck,
+  ExternalLink,
+  Copy,
+  RefreshCw,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -77,6 +83,24 @@ interface MCPPreset {
   env?: Record<string, string>;
   url?: string;
   description: string;
+  oauth_provider?: string;
+  oauth_connected?: boolean;
+  oauth_user?: string | null;
+}
+
+export interface OAuthProvider {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  type: string;
+  category: string;
+  connected: boolean;
+  user?: string | null;
+  avatar_url?: string | null;
+  scopes?: string | null;
+  expires_at?: number | null;
+  updated_at?: number | null;
 }
 
 interface AvailableOptions {
@@ -142,6 +166,21 @@ const SettingsPage: React.FC = () => {
     env: []
   });
 
+  // OAuth Management State (Zero-Config Claude-Style)
+  const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
+  const [loadingOAuth, setLoadingOAuth] = useState<boolean>(false);
+  const [oauthModal, setOauthModal] = useState<{
+    isOpen: boolean;
+    provider: string;
+    flowId?: string;
+    userCode?: string;
+    verificationUri?: string;
+    status: 'pending' | 'success' | 'error';
+    message?: string;
+    error?: string;
+  } | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+
   useEffect(() => {
     fetchConfigs();
     fetchPrompts();
@@ -149,6 +188,7 @@ const SettingsPage: React.FC = () => {
     fetchAvailableOptions();
     fetchMcpServers();
     fetchMcpPresets();
+    fetchOAuthProviders();
   }, []);
 
   const fetchConfigs = async () => {
@@ -237,6 +277,86 @@ const SettingsPage: React.FC = () => {
       setMcpPresets(res.data);
     } catch (error) {
       console.error('Failed to fetch MCP presets:', error);
+    }
+  };
+
+  const fetchOAuthProviders = async () => {
+    try {
+      setLoadingOAuth(true);
+      const res = await axios.get(`${BASE_URL}/oauth/providers`);
+      setOauthProviders(res.data);
+    } catch (error) {
+      console.error('Failed to fetch OAuth providers:', error);
+    } finally {
+      setLoadingOAuth(false);
+    }
+  };
+
+  const handleConnectOAuth = async (providerId: string) => {
+    try {
+      setCopiedCode(false);
+      setOauthModal({
+        isOpen: true,
+        provider: providerId,
+        status: 'pending',
+        message: 'Initiating secure authorization...'
+      });
+
+      const res = await axios.post(`${BASE_URL}/oauth/authorize/${providerId}`);
+      const data = res.data;
+
+      setOauthModal({
+        isOpen: true,
+        provider: providerId,
+        flowId: data.flow_id,
+        userCode: data.user_code,
+        verificationUri: data.verification_uri,
+        status: 'pending',
+        message: data.message || 'Waiting for browser approval...'
+      });
+
+      // Poll background flow status
+      if (data.flow_id) {
+        const flowId = data.flow_id;
+        const intervalId = setInterval(async () => {
+          try {
+            const check = await axios.get(`${BASE_URL}/oauth/flows/${flowId}`);
+            if (check.data.status === 'success') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'success', message: 'Authentication Successful!' } : null);
+              toast.success(`Connected to ${providerId.toUpperCase()} successfully!`);
+              setTimeout(() => {
+                setOauthModal(null);
+              }, 1600);
+              fetchOAuthProviders();
+              fetchMcpPresets();
+            } else if (check.data.status === 'error' || check.data.status === 'expired') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'error', error: check.data.error || 'Authorization failed or timed out' } : null);
+            }
+          } catch (e) {
+            // Keep polling
+          }
+        }, 2200);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to start authorization';
+      setOauthModal(prev => prev ? { ...prev, status: 'error', error: msg } : null);
+      toast.error(`Authorization error: ${msg}`);
+    }
+  };
+
+  const handleDisconnectOAuth = async (providerId: string) => {
+    if (!window.confirm(`Disconnect ${providerId.toUpperCase()}? MCP servers using this connection will lose access.`)) {
+      return;
+    }
+    try {
+      await axios.delete(`${BASE_URL}/oauth/providers/${providerId}`);
+      toast.success(`Disconnected ${providerId}`);
+      fetchOAuthProviders();
+      fetchMcpPresets();
+    } catch (err: any) {
+      toast.error(`Failed to disconnect: ${err.message}`);
     }
   };
 
@@ -1054,6 +1174,106 @@ const SettingsPage: React.FC = () => {
               </button>
             </div>
 
+            {/* Zero-Config 1-Click OAuth MCP Hub (Claude Style) */}
+            <div className="space-y-3.5 p-4 rounded-2xl bg-card border border-border shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <ShieldCheck size={15} className="text-emerald-500" />
+                    Zero-Config OAuth Integrations (Claude-Style)
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Connect accounts via browser OAuth without client IDs or API keys. Tokens are stored in <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-foreground/80">~/.openagents/credentials/oauth_tokens.json</code> and auto-injected.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchOAuthProviders}
+                  disabled={loadingOAuth}
+                  className="px-2.5 py-1 text-xs border border-border/80 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors flex items-center gap-1.5 self-start sm:self-auto shrink-0"
+                >
+                  <RefreshCw size={12} className={loadingOAuth ? "animate-spin" : ""} />
+                  <span>Refresh Status</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {oauthProviders.map((provider) => {
+                  return (
+                    <div
+                      key={provider.id}
+                      className={cn(
+                        "p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 text-left",
+                        provider.connected 
+                          ? "bg-emerald-500/[0.04] border-emerald-500/30" 
+                          : "bg-muted/20 border-border hover:border-primary/40"
+                      )}
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                            {provider.id === 'github' ? (
+                              <Terminal size={14} className="text-muted-foreground" />
+                            ) : provider.id === 'google' ? (
+                              <Globe size={14} className="text-blue-500" />
+                            ) : (
+                              <Key size={14} className="text-purple-500" />
+                            )}
+                            {provider.name}
+                          </span>
+                          <span className={cn(
+                            "text-[10px] px-1.5 py-0.2 rounded-full font-semibold uppercase tracking-wider",
+                            provider.connected 
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30" 
+                              : "bg-muted text-muted-foreground"
+                          )}>
+                            {provider.connected ? "Connected" : "Not Linked"}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                          {provider.description}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                        {provider.connected ? (
+                          <>
+                            <div className="min-w-0 flex-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium truncate">
+                              <CheckCircle2 size={13} className="shrink-0" />
+                              <span className="truncate">{provider.user || "Active"}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDisconnectOAuth(provider.id)}
+                              className="px-2 py-1 text-[11px] text-destructive hover:bg-destructive/10 rounded transition-colors shrink-0"
+                              title="Disconnect account"
+                            >
+                              Disconnect
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Lock size={11} className="text-muted-foreground/70" />
+                              Zero-token setup
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleConnectOAuth(provider.id)}
+                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm active:scale-95 flex items-center gap-1 shrink-0"
+                            >
+                              <span>Connect</span>
+                              <ExternalLink size={11} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Popular Presets Quick-Add Section */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1089,7 +1309,12 @@ const SettingsPage: React.FC = () => {
                       </div>
 
                       <div className="pt-2 border-t border-border/40 flex items-center justify-between">
-                        {alreadyRegistered ? (
+                        {preset.oauth_connected ? (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1" title="OAuth token auto-injected">
+                            <ShieldCheck size={12} />
+                            OAuth Active
+                          </span>
+                        ) : alreadyRegistered ? (
                           <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
                             <Check size={12} />
                             Registered
@@ -1842,6 +2067,134 @@ const SettingsPage: React.FC = () => {
               >
                 <Save size={14} />
                 <span>{editingMcpId ? 'Update Server' : 'Register Server'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OAuth Authorization Dialog Modal */}
+      {oauthModal && oauthModal.isOpen && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={18} className="text-emerald-500" />
+                <h3 className="font-semibold text-sm">
+                  {oauthModal.provider.toUpperCase()} Authorization
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOauthModal(null)}
+                className="p-1 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-4">
+              {oauthModal.status === 'success' ? (
+                <div className="text-center py-6 space-y-3">
+                  <div className="w-14 h-14 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
+                    <CheckCircle2 size={32} />
+                  </div>
+                  <h4 className="text-base font-semibold text-foreground">Authorization Successful!</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Connected to {oauthModal.provider.toUpperCase()}. Tokens stored in <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">~/.openagents/credentials/oauth_tokens.json</code>.
+                  </p>
+                </div>
+              ) : oauthModal.status === 'error' ? (
+                <div className="text-center py-4 space-y-3">
+                  <div className="w-12 h-12 bg-destructive/10 text-destructive rounded-full flex items-center justify-center mx-auto border border-destructive/20">
+                    <AlertCircle size={28} />
+                  </div>
+                  <h4 className="text-sm font-semibold text-foreground">Authorization Failed</h4>
+                  <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                    {oauthModal.error || 'The authentication process was cancelled or timed out.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleConnectOAuth(oauthModal.provider)}
+                    className="px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-all mt-2"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {oauthModal.userCode ? (
+                    // GitHub Device Flow Presentation
+                    <div className="space-y-3">
+                      <div className="p-3.5 bg-muted/30 rounded-xl border border-border/60 text-center space-y-2">
+                        <span className="text-xs text-muted-foreground block font-medium">Your One-Time Device Code</span>
+                        <div className="flex items-center justify-center gap-2">
+                          <code className="text-2xl font-mono font-bold tracking-widest text-primary px-3 py-1 bg-background rounded-lg border border-border">
+                            {oauthModal.userCode}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(oauthModal.userCode || '');
+                              setCopiedCode(true);
+                              setTimeout(() => setCopiedCode(false), 2000);
+                            }}
+                            className="p-2 bg-background border border-border rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Copy code"
+                          >
+                            {copiedCode ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                          </button>
+                        </div>
+                        {copiedCode && (
+                          <span className="text-[10px] text-emerald-500 font-medium block">
+                            Copied to clipboard!
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                        <p className="flex items-start gap-2">
+                          <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
+                          <span>Browser opening to <a href={oauthModal.verificationUri || 'https://github.com/login/device'} target="_blank" rel="noreferrer" className="text-primary hover:underline font-mono inline-flex items-center gap-0.5">{oauthModal.verificationUri || 'https://github.com/login/device'} <ExternalLink size={10} /></a></span>
+                        </p>
+                        <p className="flex items-start gap-2">
+                          <span className="w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
+                          <span>Paste the code above and click <strong>Authorize OpenAgents</strong>.</span>
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    // Google / Loopback PKCE Presentation
+                    <div className="py-2 text-center space-y-3">
+                      <div className="w-12 h-12 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
+                        <Globe size={24} />
+                      </div>
+                      <h4 className="text-sm font-semibold text-foreground">Browser Window Opened</h4>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Sign in with your Google account in the browser. When complete, OpenAgents will capture the authorization callback automatically.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Polling Spinner */}
+                  <div className="pt-2 flex items-center justify-center gap-2 text-xs text-muted-foreground border-t border-border/40">
+                    <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    <span>Waiting for authorization in browser...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-border bg-muted/20 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setOauthModal(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-medium hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>
