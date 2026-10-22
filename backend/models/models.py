@@ -6,14 +6,29 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from sqlalchemy import Column, String, JSON, DateTime, Integer
+from sqlalchemy import Column, String, JSON, DateTime, Integer, Boolean
 from sqlalchemy.sql import func
 from backend.db.database import Base
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any, List
 import datetime
+import uuid
 
 # SQLAlchemy Model
+class CustomAgent(Base):
+    __tablename__ = "agents"
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(255), unique=True, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    system_prompt = Column(String, nullable=True)
+    llm_provider = Column(String(50), default="ollama")
+    model_name = Column(String(100), default="llama3.1")
+    mcp_servers = Column(JSON, default=list)
+    skills = Column(JSON, default=list)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
 class AgentConfig(Base):
     __tablename__ = "agent_configs"
 
@@ -115,18 +130,26 @@ class UserRequest(BaseModel):
 # MCP Server Models
 class mcp_server_base(BaseModel):
     name: str
-    type: str
+    type: str = "stdio" # 'stdio' or 'sse'
     command: Optional[str] = None
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
     url: Optional[str] = None
 
 class mcp_server_create(mcp_server_base):
-    id: str
+    id: Optional[str] = None
+
+class mcp_server_update(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    url: Optional[str] = None
 
 class mcp_server_response(mcp_server_base):
     id: str
-    updated_at: datetime.datetime
+    updated_at: Optional[datetime.datetime] = None
 
     class Config:
         from_attributes = True
@@ -161,3 +184,35 @@ class ConversationDetail(BaseModel):
     base_directory: Optional[str] = None
     chat_mode: Optional[str] = "multiagent"
     messages: List[Dict[str, Any]] = []
+
+# Custom Agent Models
+class CustomAgentBase(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    system_prompt: Optional[str] = ""
+    llm_provider: str = "ollama"
+    model_name: str = "llama3.1"
+    mcp_servers: List[Any] = []
+    skills: List[Any] = []
+    is_active: bool = True
+
+class CustomAgentCreate(CustomAgentBase):
+    pass
+
+class CustomAgentUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None
+    llm_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    mcp_servers: Optional[List[Any]] = None
+    skills: Optional[List[Any]] = None
+    is_active: Optional[bool] = None
+
+class CustomAgentResponse(CustomAgentBase):
+    id: str
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True

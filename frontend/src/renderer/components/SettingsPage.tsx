@@ -4,8 +4,20 @@ import {
   Cpu, 
   Save, 
   Edit2, 
-  X,
-  FileText
+  X, 
+  FileText,
+  Bot,
+  Plus,
+  Trash2,
+  Server,
+  Wrench,
+  Sparkles,
+  Check,
+  AlertCircle,
+  Terminal,
+  Globe,
+  Key,
+  Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -31,23 +43,112 @@ interface AgentPrompt {
   updated_at?: string;
 }
 
+export interface CustomAgent {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  llm_provider: string;
+  model_name: string;
+  mcp_servers: string[];
+  skills: string[];
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RegisteredMCPServer {
+  id: string;
+  name: string;
+  type: string; // 'stdio' | 'sse'
+  command?: string | null;
+  args?: string[] | null;
+  env?: Record<string, string> | null;
+  url?: string | null;
+  updated_at?: string;
+}
+
+interface MCPPreset {
+  id: string;
+  name: string;
+  type: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  description: string;
+}
+
+interface AvailableOptions {
+  skills: { id: string; name: string; description: string; path?: string }[];
+  mcp_servers: { name: string; type: string; description?: string; id?: string }[];
+}
+
 const PROVIDERS = ['NONE', 'OLLAMA', 'OPENAI', 'GEMINI', 'ANTHROPIC', 'GROQ', 'OTHERS'];
+const COMMON_MODELS = ['llama3.1', 'llama3.2', 'gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'gemini-1.5-pro', 'deepseek-r1'];
 
 const SettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'agents' | 'prompts'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'custom_agents' | 'mcp_servers' | 'prompts'>('agents');
+  
+  // Built-in agents
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
   const [prompts, setPrompts] = useState<AgentPrompt[]>([]);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<AgentConfig | null>(null);
-  
   const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
   const [promptEditForm, setPromptEditForm] = useState<AgentPrompt | null>(null);
-  
   const [loading, setLoading] = useState(true);
+
+  // User-created Custom Agents
+  const [customAgents, setCustomAgents] = useState<CustomAgent[]>([]);
+  const [loadingCustomAgents, setLoadingCustomAgents] = useState<boolean>(false);
+  const [availableOptions, setAvailableOptions] = useState<AvailableOptions>({ skills: [], mcp_servers: [] });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingCustomAgentId, setEditingCustomAgentId] = useState<string | null>(null);
+
+  const [agentForm, setAgentForm] = useState({
+    name: '',
+    description: '',
+    system_prompt: '',
+    llm_provider: 'OLLAMA',
+    model_name: 'llama3.1',
+    mcp_servers: [] as string[],
+    skills: [] as string[],
+    is_active: true
+  });
+  const [customMcpInput, setCustomMcpInput] = useState('');
+  const [customSkillInput, setCustomSkillInput] = useState('');
+
+  // MCP Servers Registry State
+  const [mcpServers, setMcpServers] = useState<RegisteredMCPServer[]>([]);
+  const [mcpPresets, setMcpPresets] = useState<MCPPreset[]>([]);
+  const [loadingMcpServers, setLoadingMcpServers] = useState<boolean>(false);
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
+
+  const [mcpForm, setMcpForm] = useState<{
+    name: string;
+    type: 'stdio' | 'sse';
+    command: string;
+    args: string;
+    url: string;
+    env: { key: string; value: string }[];
+  }>({
+    name: '',
+    type: 'stdio',
+    command: 'npx',
+    args: '',
+    url: '',
+    env: []
+  });
 
   useEffect(() => {
     fetchConfigs();
     fetchPrompts();
+    fetchCustomAgents();
+    fetchAvailableOptions();
+    fetchMcpServers();
+    fetchMcpPresets();
   }, []);
 
   const fetchConfigs = async () => {
@@ -66,17 +167,14 @@ const SettingsPage: React.FC = () => {
       ];
 
       const hiddenAgents = ["RAGAgent", "YTAgent", "EmbeddingModel", "CodeExplainerAgent", "CodeExplainer", "YT", "RAG"];
-
       const filteredConfigs = response.data.filter((a: AgentConfig) => !hiddenAgents.includes(a.agent_name));
 
       const sortedConfigs = filteredConfigs.sort((a: AgentConfig, b: AgentConfig) => {
         const indexA = order.indexOf(a.agent_name);
         const indexB = order.indexOf(b.agent_name);
-        
         if (indexA === -1 && indexB === -1) return a.agent_name.localeCompare(b.agent_name);
         if (indexA === -1) return 1;
         if (indexB === -1) return -1;
-        
         return indexA - indexB;
       });
 
@@ -97,6 +195,48 @@ const SettingsPage: React.FC = () => {
       setPrompts(filteredPrompts);
     } catch (error) {
       console.error('Failed to fetch prompts:', error);
+    }
+  };
+
+  const fetchCustomAgents = async () => {
+    try {
+      setLoadingCustomAgents(true);
+      const res = await axios.get(`${BASE_URL}/custom-agents`);
+      setCustomAgents(res.data);
+    } catch (error) {
+      console.error('Failed to fetch custom agents:', error);
+    } finally {
+      setLoadingCustomAgents(false);
+    }
+  };
+
+  const fetchAvailableOptions = async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/custom-agents/available-options`);
+      setAvailableOptions(res.data);
+    } catch (error) {
+      console.error('Failed to fetch available options:', error);
+    }
+  };
+
+  const fetchMcpServers = async () => {
+    try {
+      setLoadingMcpServers(true);
+      const res = await axios.get(`${BASE_URL}/mcp-servers`);
+      setMcpServers(res.data);
+    } catch (error) {
+      console.error('Failed to fetch MCP servers:', error);
+    } finally {
+      setLoadingMcpServers(false);
+    }
+  };
+
+  const fetchMcpPresets = async () => {
+    try {
+      const res = await axios.get(`${BASE_URL}/mcp-servers/presets`);
+      setMcpPresets(res.data);
+    } catch (error) {
+      console.error('Failed to fetch MCP presets:', error);
     }
   };
 
@@ -191,6 +331,279 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // Custom Agent Management Handlers
+  const handleOpenCreateModal = () => {
+    setEditingCustomAgentId(null);
+    setAgentForm({
+      name: '',
+      description: '',
+      system_prompt: '',
+      llm_provider: 'OLLAMA',
+      model_name: 'llama3.1',
+      mcp_servers: [],
+      skills: [],
+      is_active: true
+    });
+    setCustomMcpInput('');
+    setCustomSkillInput('');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (agent: CustomAgent) => {
+    setEditingCustomAgentId(agent.id);
+    setAgentForm({
+      name: agent.name,
+      description: agent.description || '',
+      system_prompt: agent.system_prompt || '',
+      llm_provider: (agent.llm_provider || 'ollama').toUpperCase(),
+      model_name: agent.model_name || 'llama3.1',
+      mcp_servers: [...(agent.mcp_servers || [])],
+      skills: [...(agent.skills || [])],
+      is_active: agent.is_active
+    });
+    setCustomMcpInput('');
+    setCustomSkillInput('');
+    setIsModalOpen(true);
+  };
+
+  const handleToggleMcp = (mcpName: string) => {
+    setAgentForm(prev => {
+      const exists = prev.mcp_servers.includes(mcpName);
+      return {
+        ...prev,
+        mcp_servers: exists 
+          ? prev.mcp_servers.filter(m => m !== mcpName)
+          : [...prev.mcp_servers, mcpName]
+      };
+    });
+  };
+
+  const handleAddCustomMcp = () => {
+    const val = customMcpInput.trim();
+    if (!val) return;
+    if (!agentForm.mcp_servers.includes(val)) {
+      setAgentForm(prev => ({ ...prev, mcp_servers: [...prev.mcp_servers, val] }));
+    }
+    setCustomMcpInput('');
+  };
+
+  const handleToggleSkill = (skillName: string) => {
+    setAgentForm(prev => {
+      const exists = prev.skills.includes(skillName);
+      return {
+        ...prev,
+        skills: exists 
+          ? prev.skills.filter(s => s !== skillName)
+          : [...prev.skills, skillName]
+      };
+    });
+  };
+
+  const handleAddCustomSkill = () => {
+    const val = customSkillInput.trim();
+    if (!val) return;
+    if (!agentForm.skills.includes(val)) {
+      setAgentForm(prev => ({ ...prev, skills: [...prev.skills, val] }));
+    }
+    setCustomSkillInput('');
+  };
+
+  const handleSaveCustomAgent = async () => {
+    const nameClean = agentForm.name.trim();
+    if (!nameClean) {
+      toast.error('Agent name is required');
+      return;
+    }
+
+    const hasMcp = agentForm.mcp_servers.length > 0;
+    const hasSkill = agentForm.skills.length > 0;
+    if (!hasMcp && !hasSkill) {
+      toast.error('An agent must have at least one MCP server or Skill (or both)');
+      return;
+    }
+
+    try {
+      const payload = {
+        name: nameClean,
+        description: agentForm.description.trim(),
+        system_prompt: agentForm.system_prompt.trim(),
+        llm_provider: agentForm.llm_provider.toLowerCase(),
+        model_name: agentForm.model_name.trim() || 'llama3.1',
+        mcp_servers: agentForm.mcp_servers,
+        skills: agentForm.skills,
+        is_active: agentForm.is_active
+      };
+
+      if (editingCustomAgentId) {
+        await axios.put(`${BASE_URL}/custom-agents/${editingCustomAgentId}`, payload);
+        toast.success(`Agent '${payload.name}' updated successfully`);
+      } else {
+        await axios.post(`${BASE_URL}/custom-agents`, payload);
+        toast.success(`Agent '${payload.name}' created successfully`);
+      }
+
+      setIsModalOpen(false);
+      fetchCustomAgents();
+    } catch (error: any) {
+      console.error('Failed to save agent:', error);
+      const detail = error.response?.data?.detail || 'Failed to save agent';
+      toast.error(detail);
+    }
+  };
+
+  const handleDeleteCustomAgent = async (agent: CustomAgent) => {
+    if (!window.confirm(`Are you sure you want to delete '${agent.name}'?`)) {
+      return;
+    }
+    try {
+      await axios.delete(`${BASE_URL}/custom-agents/${agent.id}`);
+      toast.success(`Agent '${agent.name}' deleted`);
+      fetchCustomAgents();
+    } catch (error) {
+      console.error('Failed to delete agent:', error);
+      toast.error('Failed to delete agent');
+    }
+  };
+
+  const handleToggleAgentActive = async (agent: CustomAgent) => {
+    try {
+      const res = await axios.patch(`${BASE_URL}/custom-agents/${agent.id}/toggle`);
+      setCustomAgents(prev => prev.map(a => a.id === agent.id ? { ...a, is_active: res.data.is_active } : a));
+      toast.success(`${agent.name} is now ${res.data.is_active ? 'Active' : 'Inactive'}`);
+    } catch (error) {
+      console.error('Failed to toggle agent active state:', error);
+      toast.error('Failed to update agent status');
+    }
+  };
+
+  // MCP Server Registry Handlers
+  const handleOpenCreateMcpModal = (preset?: MCPPreset) => {
+    setEditingMcpId(null);
+    if (preset) {
+      setMcpForm({
+        name: preset.name,
+        type: (preset.type as 'stdio' | 'sse') || 'stdio',
+        command: preset.command || 'npx',
+        args: (preset.args || []).join(' '),
+        url: preset.url || '',
+        env: Object.entries(preset.env || {}).map(([key, value]) => ({ key, value }))
+      });
+    } else {
+      setMcpForm({
+        name: '',
+        type: 'stdio',
+        command: 'npx',
+        args: '',
+        url: '',
+        env: []
+      });
+    }
+    setIsMcpModalOpen(true);
+  };
+
+  const handleOpenEditMcpModal = (server: RegisteredMCPServer) => {
+    setEditingMcpId(server.id);
+    setMcpForm({
+      name: server.name,
+      type: (server.type as 'stdio' | 'sse') || 'stdio',
+      command: server.command || '',
+      args: (server.args || []).join(' '),
+      url: server.url || '',
+      env: Object.entries(server.env || {}).map(([key, value]) => ({ key, value }))
+    });
+    setIsMcpModalOpen(true);
+  };
+
+  const handleSaveMcpServer = async () => {
+    const nameClean = mcpForm.name.trim();
+    if (!nameClean) {
+      toast.error('Server name is required');
+      return;
+    }
+
+    if (mcpForm.type === 'stdio' && !mcpForm.command.trim()) {
+      toast.error('Command is required for stdio server');
+      return;
+    }
+
+    if (mcpForm.type === 'sse' && !mcpForm.url.trim()) {
+      toast.error('URL is required for SSE server');
+      return;
+    }
+
+    // Build args array
+    const parsedArgs = mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [];
+    
+    // Build env dictionary
+    const envObj: Record<string, string> = {};
+    for (const item of mcpForm.env) {
+      if (item.key.trim()) {
+        envObj[item.key.trim()] = item.value;
+      }
+    }
+
+    const payload = {
+      name: nameClean,
+      type: mcpForm.type,
+      command: mcpForm.type === 'stdio' ? mcpForm.command.trim() : null,
+      args: mcpForm.type === 'stdio' ? parsedArgs : [],
+      env: envObj,
+      url: mcpForm.type === 'sse' ? mcpForm.url.trim() : null
+    };
+
+    try {
+      if (editingMcpId) {
+        await axios.put(`${BASE_URL}/mcp-servers/${editingMcpId}`, payload);
+        toast.success(`MCP Server '${nameClean}' updated successfully`);
+      } else {
+        await axios.post(`${BASE_URL}/mcp-servers`, payload);
+        toast.success(`MCP Server '${nameClean}' registered successfully`);
+      }
+      setIsMcpModalOpen(false);
+      fetchMcpServers();
+      fetchAvailableOptions();
+    } catch (error: any) {
+      console.error('Failed to save MCP server:', error);
+      const detail = error.response?.data?.detail || 'Failed to save MCP server';
+      toast.error(detail);
+    }
+  };
+
+  const handleDeleteMcpServer = async (server: RegisteredMCPServer) => {
+    if (!window.confirm(`Are you sure you want to remove '${server.name}' from MCP registry?`)) {
+      return;
+    }
+    try {
+      await axios.delete(`${BASE_URL}/mcp-servers/${server.id}`);
+      toast.success(`MCP Server '${server.name}' removed`);
+      fetchMcpServers();
+      fetchAvailableOptions();
+    } catch (error) {
+      console.error('Failed to delete MCP server:', error);
+      toast.error('Failed to delete MCP server');
+    }
+  };
+
+  const handleAddEnvRow = () => {
+    setMcpForm(prev => ({ ...prev, env: [...prev.env, { key: '', value: '' }] }));
+  };
+
+  const handleUpdateEnvRow = (idx: number, field: 'key' | 'value', val: string) => {
+    setMcpForm(prev => {
+      const next = [...prev.env];
+      next[idx] = { ...next[idx], [field]: val };
+      return { ...prev, env: next };
+    });
+  };
+
+  const handleRemoveEnvRow = (idx: number) => {
+    setMcpForm(prev => ({ ...prev, env: prev.env.filter((_, i) => i !== idx) }));
+  };
+
+  const hasSelectedMcp = agentForm.mcp_servers.length > 0;
+  const hasSelectedSkill = agentForm.skills.length > 0;
+  const isCapabilitiesValid = hasSelectedMcp || hasSelectedSkill;
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden animate-fade-in">
       {/* Header */}
@@ -200,16 +613,16 @@ const SettingsPage: React.FC = () => {
             <SettingsIcon className="text-primary" size={24} />
             Settings
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Configure your AI agents and system prompts</p>
+          <p className="text-sm text-muted-foreground mt-1">Configure your built-in agents, custom agents, MCP registry, and prompts</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex px-8 border-b border-border bg-muted/30 shrink-0">
+      <div className="flex px-8 border-b border-border bg-muted/30 shrink-0 overflow-x-auto">
         <button
           onClick={() => setActiveTab('agents')}
           className={cn(
-            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 shrink-0",
             activeTab === 'agents' 
               ? "border-primary text-primary" 
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -219,9 +632,43 @@ const SettingsPage: React.FC = () => {
           Agent Configurations
         </button>
         <button
+          onClick={() => setActiveTab('custom_agents')}
+          className={cn(
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 shrink-0",
+            activeTab === 'custom_agents' 
+              ? "border-primary text-primary" 
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Bot size={16} />
+          My Agents
+          {customAgents.length > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.2 bg-primary/20 text-primary rounded-full text-xs font-semibold">
+              {customAgents.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('mcp_servers')}
+          className={cn(
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 shrink-0",
+            activeTab === 'mcp_servers' 
+              ? "border-primary text-primary" 
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Server size={16} />
+          MCP Servers
+          {mcpServers.length > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.2 bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-full text-xs font-semibold">
+              {mcpServers.length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setActiveTab('prompts')}
           className={cn(
-            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
+            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2 shrink-0",
             activeTab === 'prompts' 
               ? "border-primary text-primary" 
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -331,27 +778,25 @@ const SettingsPage: React.FC = () => {
                         />
                       ) : (
                         <div className="px-3 py-2 bg-muted/30 rounded-lg text-sm border border-transparent">
-                          {config.llm_config.model || <span className="text-muted-foreground italic">Not set</span>}
+                          {config.llm_config.model || <span className="text-muted-foreground italic">None</span>}
                         </div>
                       )}
                     </div>
 
                     {/* Base URL */}
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                        Base URL
-                      </label>
+                      <label className="text-sm font-medium text-muted-foreground">Base URL</label>
                       {editingAgent === config.agent_name ? (
                         <input
                           type="text"
                           value={editForm?.llm_config.base_url || ''}
                           onChange={(e) => updateFormField('llm_config.base_url', e.target.value)}
                           className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
-                          placeholder="e.g. http://localhost:11434/v1"
+                          placeholder="Optional"
                         />
                       ) : (
                         <div className="px-3 py-2 bg-muted/30 rounded-lg text-sm border border-transparent truncate">
-                          {config.llm_config.base_url || <span className="text-muted-foreground italic">Not set</span>}
+                          {config.llm_config.base_url || <span className="text-muted-foreground italic">Default</span>}
                         </div>
                       )}
                     </div>
@@ -380,6 +825,417 @@ const SettingsPage: React.FC = () => {
                 </div>
               ))
             )}
+          </div>
+        ) : activeTab === 'custom_agents' ? (
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Header banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/50">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Bot size={22} className="text-primary" />
+                  User-Created Custom Agents
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Design and manage your own custom agents with specialized LLMs, MCP servers, and Skills.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenCreateModal}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm active:scale-95 shrink-0"
+              >
+                <Plus size={16} />
+                Create Agent
+              </button>
+            </div>
+
+            {/* Custom Agents List */}
+            {loadingCustomAgents ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : customAgents.length === 0 ? (
+              <div className="text-center py-16 px-6 bg-muted/20 rounded-2xl border border-dashed border-border flex flex-col items-center">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
+                  <Bot size={28} />
+                </div>
+                <h3 className="text-base font-semibold text-foreground">No Custom Agents Created Yet</h3>
+                <p className="text-xs text-muted-foreground max-w-md mt-1 mb-6">
+                  Build custom agents tailored to your workflow by assigning them a dedicated LLM and connecting MCP tools, Skills, or both.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm"
+                >
+                  <Plus size={16} />
+                  Create First Agent
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {customAgents.map(agent => {
+                  const hasMcp = agent.mcp_servers && agent.mcp_servers.length > 0;
+                  const hasSkill = agent.skills && agent.skills.length > 0;
+
+                  return (
+                    <div
+                      key={agent.id}
+                      className={cn(
+                        "bg-card border rounded-xl p-5 transition-all shadow-sm flex flex-col gap-4",
+                        agent.is_active ? "border-border hover:border-primary/50" : "border-border/60 opacity-80 bg-muted/10"
+                      )}
+                    >
+                      {/* Top row */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className="text-base font-semibold text-foreground">{agent.name}</span>
+                            <span className={cn(
+                              "px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full",
+                              agent.is_active 
+                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20" 
+                                : "bg-muted text-muted-foreground border border-border"
+                            )}>
+                              {agent.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                            
+                            {hasMcp && hasSkill ? (
+                              <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                                Dual: MCP + Skill
+                              </span>
+                            ) : hasMcp ? (
+                              <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">
+                                MCP Enabled
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-purple-500/10 text-purple-500 border border-purple-500/20">
+                                Skill Enabled
+                              </span>
+                            )}
+                          </div>
+
+                          {agent.description ? (
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {agent.description}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground italic">No description provided</p>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAgentActive(agent)}
+                            className={cn(
+                              "px-2.5 py-1 rounded-md text-xs font-medium transition-colors border flex items-center gap-1.5 mr-1",
+                              agent.is_active 
+                                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/20" 
+                                : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                            )}
+                            title={agent.is_active ? "Click to deactivate" : "Click to activate"}
+                          >
+                            <span className={cn("w-1.5 h-1.5 rounded-full", agent.is_active ? "bg-emerald-500 animate-pulse" : "bg-zinc-400")} />
+                            <span>{agent.is_active ? 'Enabled' : 'Disabled'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(agent)}
+                            className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+                            title="Edit Agent"
+                            aria-label={`Edit ${agent.name}`}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomAgent(agent)}
+                            className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                            title="Delete Agent"
+                            aria-label={`Delete ${agent.name}`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Capabilities and Specs Row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-border/50 text-xs">
+                        {/* LLM Spec */}
+                        <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
+                          <Cpu size={15} className="text-primary shrink-0" />
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-muted-foreground block uppercase font-mono">LLM</span>
+                            <span className="font-medium text-foreground truncate block">
+                              {agent.llm_provider.toUpperCase()} • {agent.model_name}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* MCP Servers */}
+                        <div className="flex items-start gap-2 p-2 bg-muted/30 rounded-lg sm:col-span-1">
+                          <Server size={15} className="text-blue-500 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] text-muted-foreground block uppercase font-mono">
+                              MCP Servers ({agent.mcp_servers?.length || 0})
+                            </span>
+                            {hasMcp ? (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {agent.mcp_servers.map((mcp, idx) => (
+                                  <span key={idx} className="px-1.5 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-[11px] font-mono">
+                                    {mcp}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground italic text-[11px]">None assigned</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Skills */}
+                        <div className="flex items-start gap-2 p-2 bg-muted/30 rounded-lg sm:col-span-1">
+                          <Wrench size={15} className="text-purple-500 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] text-muted-foreground block uppercase font-mono">
+                              Skills ({agent.skills?.length || 0})
+                            </span>
+                            {hasSkill ? (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {agent.skills.map((s, idx) => (
+                                  <span key={idx} className="px-1.5 py-0.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded text-[11px] font-mono">
+                                    {s}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground italic text-[11px]">None assigned</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* System Prompt preview if available */}
+                      {agent.system_prompt && (
+                        <div className="bg-muted/20 rounded-lg p-2.5 border border-border/30 text-[11px] font-mono text-muted-foreground truncate">
+                          <span className="font-semibold text-foreground/70 mr-1.5 uppercase tracking-wider text-[10px]">Prompt:</span>
+                          {agent.system_prompt}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'mcp_servers' ? (
+          <div className="max-w-4xl mx-auto space-y-8">
+            {/* Header banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/50">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Server size={22} className="text-primary" />
+                  Model Context Protocol (MCP) Server Registry
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure and manage shared MCP servers. Any agent can be connected to these servers without running separate instances.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenCreateMcpModal()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm active:scale-95 shrink-0"
+              >
+                <Plus size={16} />
+                Register MCP Server
+              </button>
+            </div>
+
+            {/* Popular Presets Quick-Add Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-primary" />
+                  Quick-Add Popular Presets
+                </h3>
+                <span className="text-[11px] text-muted-foreground">Click any preset to prefill and configure</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {mcpPresets.map((preset) => {
+                  const alreadyRegistered = mcpServers.some(s => s.name.toLowerCase() === preset.name.toLowerCase());
+
+                  return (
+                    <div
+                      key={preset.id}
+                      className={cn(
+                        "p-3.5 rounded-xl border bg-card/60 transition-all flex flex-col justify-between gap-3 text-left group",
+                        alreadyRegistered ? "border-border/60 opacity-80" : "border-border hover:border-primary/50 hover:shadow-sm"
+                      )}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-semibold text-xs text-foreground">{preset.name}</span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted text-muted-foreground uppercase">
+                            {preset.type}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                          {preset.description}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-border/40 flex items-center justify-between">
+                        {alreadyRegistered ? (
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                            <Check size={12} />
+                            Registered
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {preset.command || 'sse'}
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCreateMcpModal(preset)}
+                          className={cn(
+                            "px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1",
+                            alreadyRegistered 
+                              ? "bg-muted text-muted-foreground hover:text-foreground" 
+                              : "bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+                          )}
+                        >
+                          <Plus size={12} />
+                          {alreadyRegistered ? 'Configure' : 'Add'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Registered Servers List */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Database size={14} className="text-primary" />
+                  Active Registered MCP Servers ({mcpServers.length})
+                </h3>
+              </div>
+
+              {loadingMcpServers ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : mcpServers.length === 0 ? (
+                <div className="text-center py-14 px-6 bg-muted/20 rounded-2xl border border-dashed border-border flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-3">
+                    <Server size={24} />
+                  </div>
+                  <h4 className="text-sm font-semibold text-foreground">No MCP Servers Registered Yet</h4>
+                  <p className="text-xs text-muted-foreground max-w-sm mt-1 mb-5">
+                    Register an MCP server above (or choose a quick preset) to make its tools available to all your custom agents.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCreateMcpModal()}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm"
+                  >
+                    <Plus size={14} />
+                    Register Custom Server
+                  </button>
+                </div>
+              ) : (
+                <div className="grid gap-3.5">
+                  {mcpServers.map((server) => {
+                    const isStdio = server.type === 'stdio';
+                    const envKeys = Object.keys(server.env || {});
+
+                    return (
+                      <div
+                        key={server.id}
+                        className="bg-card border border-border rounded-xl p-4 transition-all shadow-sm hover:border-primary/40 space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-sm text-foreground">{server.name}</span>
+                              <span className={cn(
+                                "px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-full",
+                                isStdio 
+                                  ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20" 
+                                  : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                              )}>
+                                {server.type}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditMcpModal(server)}
+                              className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors"
+                              title="Edit Server"
+                              aria-label={`Edit ${server.name}`}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMcpServer(server)}
+                              className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                              title="Delete Server"
+                              aria-label={`Delete ${server.name}`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Connection Details */}
+                        <div className="bg-muted/30 p-2.5 rounded-lg border border-border/40 space-y-1.5 text-xs font-mono">
+                          {isStdio ? (
+                            <div className="flex items-start gap-2">
+                              <Terminal size={14} className="text-muted-foreground shrink-0 mt-0.5" />
+                              <div className="break-all text-muted-foreground leading-normal">
+                                <span className="text-foreground font-semibold mr-1.5">{server.command}</span>
+                                {(server.args || []).join(' ')}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Globe size={14} className="text-purple-500 shrink-0" />
+                              <span className="text-foreground break-all">{server.url}</span>
+                            </div>
+                          )}
+
+                          {envKeys.length > 0 && (
+                            <div className="flex items-center gap-2 pt-1 border-t border-border/30 text-[11px] text-muted-foreground">
+                              <Key size={12} className="text-amber-500 shrink-0" />
+                              <span>Environment Variables:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {envKeys.map(k => (
+                                  <span key={k} className="px-1.5 py-0.2 bg-muted rounded font-mono text-[10px]">
+                                    {k}=••••
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="max-w-4xl mx-auto space-y-6">
@@ -452,6 +1308,545 @@ const SettingsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Create / Edit Custom Agent Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-card border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0 bg-muted/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <Bot size={18} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-base">
+                    {editingCustomAgentId ? `Edit Agent: ${agentForm.name}` : 'Create Custom Agent'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Define name, routing LLM, and assign MCP servers or Skills.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
+              {/* Name & Active toggle */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                    Agent Name <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={agentForm.name}
+                    onChange={(e) => setAgentForm({ ...agentForm, name: e.target.value })}
+                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                    placeholder="e.g. DocumentationWriter, SqlOptimizer"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground block">
+                    Status
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setAgentForm({ ...agentForm, is_active: !agentForm.is_active })}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition-all",
+                      agentForm.is_active 
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400" 
+                        : "bg-muted border-border text-muted-foreground"
+                    )}
+                  >
+                    <span>{agentForm.is_active ? 'Active' : 'Inactive'}</span>
+                    <span className={cn(
+                      "w-2 h-2 rounded-full",
+                      agentForm.is_active ? "bg-emerald-500" : "bg-zinc-400"
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-foreground">
+                  Description / Role
+                </label>
+                <input
+                  type="text"
+                  value={agentForm.description}
+                  onChange={(e) => setAgentForm({ ...agentForm, description: e.target.value })}
+                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                  placeholder="Explain what this agent does and its area of expertise..."
+                />
+              </div>
+
+              {/* LLM Configuration */}
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Cpu size={14} className="text-primary" />
+                  LLM Model Configuration
+                </h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Provider</label>
+                    <select
+                      value={agentForm.llm_provider.toUpperCase()}
+                      onChange={(e) => setAgentForm({ ...agentForm, llm_provider: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                    >
+                      {PROVIDERS.filter(p => p !== 'NONE').map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Model Name</label>
+                    <input
+                      type="text"
+                      value={agentForm.model_name}
+                      onChange={(e) => setAgentForm({ ...agentForm, model_name: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all font-mono"
+                      placeholder="e.g. llama3.1, gpt-4o"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Model presets */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[11px] text-muted-foreground">Quick select:</span>
+                  {COMMON_MODELS.map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setAgentForm({ ...agentForm, model_name: m })}
+                      className={cn(
+                        "px-2 py-0.5 rounded text-[11px] font-mono transition-colors",
+                        agentForm.model_name === m 
+                          ? "bg-primary text-primary-foreground font-semibold" 
+                          : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Capabilities Requirement Box */}
+              <div className="space-y-4 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-primary" />
+                    Agent Capabilities (MCP or Skill or Both)
+                  </h4>
+
+                  {isCapabilitiesValid ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                      <Check size={12} />
+                      {hasSelectedMcp && hasSelectedSkill 
+                        ? 'MCP + Skill Selected' 
+                        : hasSelectedMcp 
+                          ? 'MCP Selected' 
+                          : 'Skill Selected'}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full animate-pulse">
+                      <AlertCircle size={12} />
+                      At least one required
+                    </span>
+                  )}
+                </div>
+
+                {/* MCP Servers Selection */}
+                <div className="p-3.5 bg-muted/20 border border-border/60 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Server size={14} className="text-blue-500" />
+                      Assign MCP Servers
+                    </label>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      Selected: {agentForm.mcp_servers.length}
+                    </span>
+                  </div>
+
+                  {/* Available MCP Chips */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {availableOptions.mcp_servers.map((mcp) => {
+                      const isSelected = agentForm.mcp_servers.includes(mcp.name);
+                      return (
+                        <button
+                          key={mcp.name}
+                          type="button"
+                          onClick={() => handleToggleMcp(mcp.name)}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 border",
+                            isSelected
+                              ? "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40 font-semibold"
+                              : "bg-background text-muted-foreground border-border hover:border-border/80 hover:text-foreground"
+                          )}
+                          title={mcp.description || mcp.name}
+                        >
+                          {isSelected && <Check size={12} />}
+                          <span>{mcp.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom MCP input */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={customMcpInput}
+                      onChange={(e) => setCustomMcpInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomMcp();
+                        }
+                      }}
+                      placeholder="Add custom MCP server name..."
+                      className="flex-1 bg-background border border-input rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomMcp}
+                      disabled={!customMcpInput.trim()}
+                      className="px-2.5 py-1 bg-muted hover:bg-muted/80 text-foreground text-xs rounded-lg border border-border disabled:opacity-50"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Skills Selection */}
+                <div className="p-3.5 bg-muted/20 border border-border/60 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Wrench size={14} className="text-purple-500" />
+                      Assign Skills
+                    </label>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      Selected: {agentForm.skills.length}
+                    </span>
+                  </div>
+
+                  {/* Available Skills Chips */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {availableOptions.skills.map((skill) => {
+                      const isSelected = agentForm.skills.includes(skill.name);
+                      return (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          onClick={() => handleToggleSkill(skill.name)}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 border",
+                            isSelected
+                              ? "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/40 font-semibold"
+                              : "bg-background text-muted-foreground border-border hover:border-border/80 hover:text-foreground"
+                          )}
+                          title={skill.description || skill.name}
+                        >
+                          {isSelected && <Check size={12} />}
+                          <span>{skill.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Custom Skill input */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={customSkillInput}
+                      onChange={(e) => setCustomSkillInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomSkill();
+                        }
+                      }}
+                      placeholder="Add custom skill name..."
+                      className="flex-1 bg-background border border-input rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSkill}
+                      disabled={!customSkillInput.trim()}
+                      className="px-2.5 py-1 bg-muted hover:bg-muted/80 text-foreground text-xs rounded-lg border border-border disabled:opacity-50"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Prompt */}
+              <div className="space-y-1.5 pt-2 border-t border-border/50">
+                <label className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>Custom System Prompt / Instructions</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Optional</span>
+                </label>
+                <textarea
+                  value={agentForm.system_prompt}
+                  onChange={(e) => setAgentForm({ ...agentForm, system_prompt: e.target.value })}
+                  rows={4}
+                  className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono leading-relaxed focus:ring-2 focus:ring-primary outline-none transition-all custom-scrollbar"
+                  placeholder="Define base instructions, constraints, and behavior for this agent..."
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-border bg-muted/20 flex items-center justify-between shrink-0">
+              <div className="text-xs">
+                {!isCapabilitiesValid && (
+                  <span className="text-amber-500 flex items-center gap-1 font-medium">
+                    <AlertCircle size={13} />
+                    Select at least 1 MCP or Skill to save.
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-medium hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCustomAgent}
+                  disabled={!agentForm.name.trim() || !isCapabilitiesValid}
+                  className="px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5"
+                >
+                  <Save size={14} />
+                  <span>{editingCustomAgentId ? 'Update Agent' : 'Create Agent'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Register / Edit MCP Server Modal */}
+      {isMcpModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-card border border-border w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0 bg-muted/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                  <Server size={18} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-base">
+                    {editingMcpId ? `Edit MCP Server: ${mcpForm.name}` : 'Register MCP Server'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Connect an external tool via Model Context Protocol (stdio subprocess or SSE).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMcpModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+              {/* Name & Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                    Server Name <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={mcpForm.name}
+                    onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
+                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                    placeholder="e.g. GitHub, Filesystem, Postgres"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">
+                    Protocol Transport
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMcpForm({ ...mcpForm, type: 'stdio' })}
+                      className={cn(
+                        "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
+                        mcpForm.type === 'stdio'
+                          ? "bg-blue-500/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-semibold"
+                          : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Terminal size={13} />
+                      stdio
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMcpForm({ ...mcpForm, type: 'sse' })}
+                      className={cn(
+                        "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
+                        mcpForm.type === 'sse'
+                          ? "bg-purple-500/10 border-purple-500/40 text-purple-600 dark:text-purple-400 font-semibold"
+                          : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Globe size={13} />
+                      SSE / HTTP
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* stdio options: command & arguments */}
+              {mcpForm.type === 'stdio' ? (
+                <div className="space-y-3 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-foreground flex items-center gap-1">
+                      Command <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={mcpForm.command}
+                      onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                      placeholder="e.g. npx, uvx, python, node, docker"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-foreground">
+                      Command Arguments (space-separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={mcpForm.args}
+                      onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                      placeholder="e.g. -y @modelcontextprotocol/server-github"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+                  <label className="text-xs font-medium text-foreground flex items-center gap-1">
+                    Server SSE URL <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={mcpForm.url}
+                    onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
+                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                    placeholder="e.g. http://localhost:3000/sse"
+                  />
+                </div>
+              )}
+
+              {/* Environment Variables */}
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Key size={13} className="text-amber-500" />
+                    Environment Variables (API Keys & Tokens)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddEnvRow}
+                    className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
+                  >
+                    <Plus size={12} />
+                    Add Variable
+                  </button>
+                </div>
+
+                {mcpForm.env.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic bg-muted/20 p-2.5 rounded-lg border border-border/30">
+                    No environment variables configured.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                    {mcpForm.env.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row.key}
+                          onChange={(e) => handleUpdateEnvRow(idx, 'key', e.target.value)}
+                          placeholder="VARIABLE_NAME"
+                          className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary uppercase"
+                        />
+                        <input
+                          type="password"
+                          value={row.value}
+                          onChange={(e) => handleUpdateEnvRow(idx, 'value', e.target.value)}
+                          placeholder="value / secret token"
+                          className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEnvRow(idx)}
+                          className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-colors"
+                          title="Remove variable"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-border bg-muted/20 flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsMcpModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-medium hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveMcpServer}
+                disabled={!mcpForm.name.trim() || (mcpForm.type === 'stdio' && !mcpForm.command.trim()) || (mcpForm.type === 'sse' && !mcpForm.url.trim())}
+                className="px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5"
+              >
+                <Save size={14} />
+                <span>{editingMcpId ? 'Update Server' : 'Register Server'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

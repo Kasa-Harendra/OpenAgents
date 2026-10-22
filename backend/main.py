@@ -16,6 +16,8 @@ from backend.agent_flow import execute
 from backend.routers.agent_config import router as config_router, init_db
 from backend.routers.auth import router as auth_router
 from backend.routers.conversations import router as conversations_router
+from backend.routers.custom_agents import router as custom_agents_router
+from backend.routers.mcp_servers import router as mcp_servers_router
 
 import json
 import asyncio
@@ -46,6 +48,8 @@ app.add_middleware(
 app.include_router(config_router, tags=["config"])
 app.include_router(auth_router, tags=["auth"])
 app.include_router(conversations_router)
+app.include_router(custom_agents_router, tags=["custom_agents"])
+app.include_router(mcp_servers_router, tags=["mcp_servers"])
 
 active_tasks: Dict[str, asyncio.Task] = {}
 
