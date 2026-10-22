@@ -27,7 +27,9 @@ import {
   Code,
   Zap,
   Layers,
-  FileJson
+  FileJson,
+  ShieldAlert,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -198,6 +200,70 @@ const SettingsPage: React.FC = () => {
     redirect_port: 8765
   });
 
+  // RFC 9728 OAuth Protected Resource Probing State (Claude-style auto-discovery)
+  interface McpProbeResult {
+    auth_required: boolean;
+    provider?: string;
+    resource_name?: string;
+    metadata_url?: string;
+    authorization_servers?: string[];
+    scopes?: string[];
+    auth_endpoint?: string;
+    token_endpoint?: string;
+    has_token?: boolean;
+    status_code?: number;
+    error?: string;
+  }
+  const [probingUrl, setProbingUrl] = useState(false);
+  const [probeResult, setProbeResult] = useState<McpProbeResult | null>(null);
+
+  const probeMcpUrl = async (urlToProbe: string): Promise<McpProbeResult | null> => {
+    if (!urlToProbe || !urlToProbe.trim().startsWith('http')) {
+      setProbeResult(null);
+      return null;
+    }
+    setProbingUrl(true);
+    try {
+      const res = await axios.post(`${BASE_URL}/mcp-servers/probe`, { url: urlToProbe.trim() });
+      const data: McpProbeResult = res.data;
+      setProbeResult(data);
+      if (data.auth_required && data.provider) {
+        if (['github', 'google', 'slack', 'custom'].includes(data.provider)) {
+          setJsonOAuthProvider(data.provider as any);
+        }
+        if (data.provider === 'custom' && (data.auth_endpoint || data.token_endpoint)) {
+          setCustomOAuthParams(prev => ({
+            ...prev,
+            auth_url: data.auth_endpoint || prev.auth_url,
+            token_url: data.token_endpoint || prev.token_url,
+            scopes: (data.scopes && data.scopes.length > 0) ? data.scopes.join(' ') : prev.scopes
+          }));
+        }
+        // If user hasn't typed a server name yet, auto-populate from RFC 9728 resource_name
+        if (data.resource_name) {
+          setMcpForm(prev => prev.name ? prev : { ...prev, name: data.resource_name || '' });
+        }
+      }
+      return data;
+    } catch (err) {
+      setProbeResult(null);
+      return null;
+    } finally {
+      setProbingUrl(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mcpForm.type === 'sse' && mcpForm.url && mcpForm.url.trim().startsWith('http')) {
+      const timer = setTimeout(() => {
+        probeMcpUrl(mcpForm.url);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setProbeResult(null);
+    }
+  }, [mcpForm.url, mcpForm.type]);
+
   useEffect(() => {
     fetchConfigs();
     fetchPrompts();
@@ -342,6 +408,28 @@ const SettingsPage: React.FC = () => {
               clearInterval(intervalId);
               setOauthModal(prev => prev ? { ...prev, status: 'success', message: 'Authentication Successful!' } : null);
               toast.success(`Connected to ${providerId.toUpperCase()} successfully!`);
+
+              // Re-probe active URL if present to update UI to 'Authorized'
+              if (mcpForm.url) {
+                probeMcpUrl(mcpForm.url);
+              }
+
+              // Auto-inject tokens into form and rawJson
+              try {
+                const envRes = await axios.get(`${BASE_URL}/oauth/env/${providerId}`);
+                const injected = envRes.data || {};
+                setMcpForm(prev => {
+                  const existingKeys = new Set(prev.env.map(e => e.key));
+                  const newPairs = [...prev.env];
+                  for (const [k, v] of Object.entries(injected)) {
+                    if (!existingKeys.has(k)) {
+                      newPairs.push({ key: k, value: String(v) });
+                    }
+                  }
+                  return { ...prev, env: newPairs };
+                });
+              } catch (_) {}
+
               setTimeout(() => {
                 setOauthModal(null);
               }, 1600);
@@ -685,6 +773,10 @@ const SettingsPage: React.FC = () => {
         setJsonOAuthProvider('slack');
       }
 
+      if (targetType === 'sse' && targetUrl && targetUrl.startsWith('http')) {
+        probeMcpUrl(targetUrl);
+      }
+
       return true;
     } catch (err: any) {
       setRawJsonError(err.message || 'Invalid JSON syntax');
@@ -898,6 +990,7 @@ const SettingsPage: React.FC = () => {
     setEditingMcpId(null);
     setMcpModalTab('form');
     setRawJsonError(null);
+    setProbeResult(null);
     let initialForm = {
       name: '',
       type: 'stdio' as 'stdio' | 'sse',
@@ -918,6 +1011,9 @@ const SettingsPage: React.FC = () => {
       if (preset.oauth_provider) {
         setJsonOAuthProvider((preset.oauth_provider as any) || 'github');
       }
+      if (preset.url) {
+        probeMcpUrl(preset.url);
+      }
     }
     setMcpForm(initialForm);
     setRawJsonInput(generateJsonFromForm(initialForm));
@@ -928,6 +1024,7 @@ const SettingsPage: React.FC = () => {
     setEditingMcpId(server.id);
     setMcpModalTab('form');
     setRawJsonError(null);
+    setProbeResult(null);
     const initialForm = {
       name: server.name,
       type: (server.type as 'stdio' | 'sse') || 'stdio',
@@ -936,6 +1033,9 @@ const SettingsPage: React.FC = () => {
       url: server.url || '',
       env: Object.entries(server.env || {}).map(([key, value]) => ({ key, value }))
     };
+    if (server.url) {
+      probeMcpUrl(server.url);
+    }
     setMcpForm(initialForm);
     setRawJsonInput(generateJsonFromForm(initialForm));
     setIsMcpModalOpen(true);
@@ -965,6 +1065,19 @@ const SettingsPage: React.FC = () => {
     if (mcpForm.type === 'sse' && !mcpForm.url.trim()) {
       toast.error('URL is required for SSE server');
       return;
+    }
+
+    // Auto-OAuth Check: If endpoint is protected and user hasn't authenticated yet, trigger OAuth flow automatically
+    if (mcpForm.type === 'sse' && mcpForm.url.trim()) {
+      let currentProbe = probeResult;
+      if (!currentProbe || currentProbe.metadata_url === undefined) {
+        currentProbe = await probeMcpUrl(mcpForm.url.trim());
+      }
+      if (currentProbe?.auth_required && !currentProbe?.has_token) {
+        toast.info(`OAuth authorization required for ${currentProbe.resource_name || currentProbe.provider?.toUpperCase()}. Launching authentication...`);
+        handleConnectOAuth(currentProbe.provider || 'github');
+        return;
+      }
     }
 
     // Build args array
@@ -2329,17 +2442,76 @@ const SettingsPage: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-1.5 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
-                    <label className="text-xs font-medium text-foreground flex items-center gap-1">
-                      Server SSE URL <span className="text-destructive">*</span>
-                    </label>
+                  <div className="space-y-2 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1">
+                        Server SSE URL <span className="text-destructive">*</span>
+                      </label>
+                      {probingUrl && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Loader2 size={12} className="animate-spin text-primary" />
+                          Probing RFC 9728 metadata...
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={mcpForm.url}
                       onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
                       className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
-                      placeholder="e.g. http://localhost:3000/sse"
+                      placeholder="e.g. https://api.githubcopilot.com/mcp/ or http://localhost:3000/sse"
                     />
+
+                    {/* Live RFC 9728 OAuth Protected Resource Banner */}
+                    {probeResult && probeResult.auth_required && (
+                      <div className={cn(
+                        "p-3 rounded-lg border flex flex-col gap-1.5 transition-all",
+                        probeResult.has_token
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-foreground"
+                          : "bg-amber-500/10 border-amber-500/30 text-foreground"
+                      )}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-start gap-2">
+                            {probeResult.has_token ? (
+                              <CheckCircle2 size={15} className="text-emerald-500 mt-0.5 shrink-0" />
+                            ) : (
+                              <ShieldAlert size={15} className="text-amber-500 mt-0.5 shrink-0" />
+                            )}
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold">
+                                  {probeResult.resource_name || 'Protected Resource'}
+                                </span>
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted/80 text-muted-foreground uppercase border border-border/50">
+                                  {probeResult.provider}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                {probeResult.has_token
+                                  ? `Authenticated with ${probeResult.provider?.toUpperCase()}. Bearer token will be auto-injected.`
+                                  : `Endpoint returned 401 Unauthorized with RFC 9728 metadata. Requires ${probeResult.provider?.toUpperCase()} authentication.`
+                                }
+                              </p>
+                            </div>
+                          </div>
+                          {!probeResult.has_token && (
+                            <button
+                              type="button"
+                              onClick={() => handleConnectOAuth(probeResult.provider || 'github')}
+                              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-md transition-all shadow-sm active:scale-95 shrink-0 flex items-center gap-1"
+                            >
+                              <Zap size={12} className="fill-slate-950" />
+                              Authorize Now
+                            </button>
+                          )}
+                        </div>
+                        {probeResult.metadata_url && (
+                          <div className="text-[10px] text-muted-foreground font-mono truncate">
+                            Protected Metadata: {probeResult.metadata_url}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2462,6 +2634,52 @@ const SettingsPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                {/* Live RFC 9728 Detection Banner in JSON Tab */}
+                {probeResult && probeResult.auth_required && (
+                  <div className={cn(
+                    "p-3 rounded-lg border flex flex-col gap-1.5 transition-all",
+                    probeResult.has_token
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-foreground"
+                      : "bg-amber-500/10 border-amber-500/30 text-foreground"
+                  )}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-start gap-2">
+                        {probeResult.has_token ? (
+                          <CheckCircle2 size={15} className="text-emerald-500 mt-0.5 shrink-0" />
+                        ) : (
+                          <ShieldAlert size={15} className="text-amber-500 mt-0.5 shrink-0" />
+                        )}
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold">
+                              RFC 9728 Protected: {probeResult.resource_name || 'Protected Resource'}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-muted/80 text-muted-foreground uppercase border border-border/50">
+                              {probeResult.provider}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            {probeResult.has_token
+                              ? `Authenticated. Injected Authorization: Bearer <token>.`
+                              : `Requires ${probeResult.provider?.toUpperCase()} authorization to establish SSE connection.`
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      {!probeResult.has_token && (
+                        <button
+                          type="button"
+                          onClick={() => handleConnectOAuth(probeResult.provider || 'github')}
+                          className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-md transition-all shadow-sm active:scale-95 shrink-0 flex items-center gap-1"
+                        >
+                          <Zap size={12} className="fill-slate-950" />
+                          Authorize Now
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Monospaced Editor */}
                 <div className="space-y-1.5">

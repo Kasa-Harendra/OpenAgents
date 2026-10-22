@@ -647,20 +647,22 @@ class OAuthManager:
     # =========================================================================
     # Environment Injection for MCP Servers
     # =========================================================================
-    def get_env_for_mcp(self, server_name: str) -> Dict[str, str]:
+    def get_env_for_mcp(self, server_name: str, url: Optional[str] = None) -> Dict[str, str]:
         """
-        Automatically returns environment variables needed for an MCP server
+        Automatically returns environment variables / headers needed for an MCP server
         based on active OAuth connections.
         """
         env: Dict[str, str] = {}
         s_lower = server_name.lower()
+        u_lower = (url or "").lower()
 
-        # GitHub
-        if "github" in s_lower or "git" in s_lower:
+        # GitHub (Copilot SSE or stdio)
+        if "github" in s_lower or "git" in s_lower or "copilot" in s_lower or "githubcopilot.com" in u_lower or "github.com" in u_lower:
             gh_token = self.get_valid_token("github")
             if gh_token:
                 env["GITHUB_PERSONAL_ACCESS_TOKEN"] = gh_token
                 env["GITHUB_TOKEN"] = gh_token
+                env["Authorization"] = f"Bearer {gh_token}"
 
         # Google Drive / Gmail / Google Calendar
         if "google" in s_lower or "drive" in s_lower or "gmail" in s_lower or "calendar" in s_lower:
@@ -679,6 +681,117 @@ class OAuthManager:
                 env["SLACK_BOT_TOKEN"] = slack_token
 
         return env
+
+    def probe_endpoint(self, url: str) -> Dict[str, Any]:
+        """
+        Inspects an SSE/HTTP MCP endpoint. If it returns 401 Unauthorized,
+        parses WWW-Authenticate and RFC 9728 OAuth protected resource metadata
+        to identify the required authorization server.
+        """
+        import re
+        from urllib.parse import urlparse
+
+        if not url or not url.startswith(("http://", "https://")):
+            return {"auth_required": False, "error": "Invalid URL"}
+
+        try:
+            res = requests.get(url, timeout=6)
+            if res.status_code == 401:
+                auth_header = res.headers.get("www-authenticate", "")
+                match = re.search(r'resource_metadata="([^"]+)"', auth_header)
+                meta_url = match.group(1) if match else None
+
+                parsed = urlparse(url)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+
+                # Fallback RFC 9728 well-known endpoints if not specified in header
+                if not meta_url:
+                    path_stripped = parsed.path.rstrip('/')
+                    candidates = [
+                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}/",
+                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}",
+                        f"{origin}/.well-known/oauth-protected-resource/",
+                        f"{origin}/.well-known/oauth-protected-resource",
+                    ]
+                    for candidate in candidates:
+                        try:
+                            c_res = requests.get(candidate, timeout=3)
+                            if c_res.status_code == 200 and "authorization_servers" in c_res.text:
+                                meta_url = candidate
+                                break
+                        except Exception:
+                            continue
+
+                provider = "generic"
+                resource_name = "Remote MCP Server"
+                auth_servers = []
+                scopes = []
+                auth_endpoint = None
+                token_endpoint = None
+
+                if "github" in url.lower() or "copilot" in url.lower() or (meta_url and "github" in meta_url.lower()):
+                    provider = "github"
+                    resource_name = "GitHub MCP Server"
+
+                if meta_url:
+                    try:
+                        m_res = requests.get(meta_url, timeout=5)
+                        if m_res.status_code == 200:
+                            m_data = m_res.json()
+                            resource_name = m_data.get("resource_name", resource_name)
+                            auth_servers = m_data.get("authorization_servers", [])
+                            scopes = m_data.get("scopes_supported", [])
+
+                            if any("github" in str(s).lower() for s in auth_servers):
+                                provider = "github"
+                            elif auth_servers:
+                                provider = "custom"
+                                # Attempt RFC 8414 Authorization Server Metadata discovery
+                                as_base = str(auth_servers[0]).rstrip('/')
+                                for as_meta_url in [
+                                    f"{as_base}/.well-known/oauth-authorization-server",
+                                    f"{as_base}/.well-known/openid-configuration"
+                                ]:
+                                    try:
+                                        as_res = requests.get(as_meta_url, timeout=4)
+                                        if as_res.status_code == 200:
+                                            as_json = as_res.json()
+                                            auth_endpoint = as_json.get("authorization_endpoint")
+                                            token_endpoint = as_json.get("token_endpoint")
+                                            if auth_endpoint and token_endpoint:
+                                                break
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
+
+                has_token = bool(self.get_valid_token(provider)) if provider != "generic" else False
+
+                return {
+                    "auth_required": True,
+                    "provider": provider,
+                    "resource_name": resource_name,
+                    "metadata_url": meta_url,
+                    "authorization_servers": auth_servers,
+                    "scopes": scopes,
+                    "auth_endpoint": auth_endpoint,
+                    "token_endpoint": token_endpoint,
+                    "has_token": has_token,
+                    "status_code": 401
+                }
+            return {"auth_required": False, "status_code": res.status_code}
+        except Exception as e:
+            # If domain indicates githubcopilot.com, still detect as github
+            if "githubcopilot.com" in url.lower() or "github.com" in url.lower():
+                has_token = bool(self.get_valid_token("github"))
+                return {
+                    "auth_required": True,
+                    "provider": "github",
+                    "resource_name": "GitHub MCP Server",
+                    "has_token": has_token,
+                    "status_code": 401
+                }
+            return {"auth_required": False, "error": str(e)}
 
 
 oauth_manager = OAuthManager()

@@ -3,6 +3,7 @@ import datetime
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.db.database import get_db
@@ -16,7 +17,19 @@ from backend.services.oauth_manager import oauth_manager
 
 router = APIRouter(prefix="/mcp-servers")
 
+class ProbeRequest(BaseModel):
+    url: str
+
 POPULAR_MCP_PRESETS = [
+    {
+        "id": "preset-github-copilot",
+        "name": "GitHub Copilot Remote MCP",
+        "type": "sse",
+        "url": "https://api.githubcopilot.com/mcp/",
+        "env": {},
+        "description": "Official GitHub Copilot Remote MCP (SSE) for repositories, code search, PRs, and workflow logs",
+        "oauth_provider": "github"
+    },
     {
         "id": "preset-github",
         "name": "GitHub",
@@ -131,13 +144,18 @@ def get_mcp_presets():
         enriched.append(p_copy)
     return enriched
 
+@router.post("/probe")
+def probe_mcp_server(data: ProbeRequest):
+    """Probe an SSE/HTTP MCP endpoint to detect if OAuth authorization is required."""
+    return oauth_manager.probe_endpoint(data.url)
+
 @router.get("", response_model=List[mcp_server_response])
 def list_mcp_servers(db: Session = Depends(get_db)):
-    """List all registered MCP servers in the registry with auto-injected OAuth envs."""
+    """List all registered MCP servers in the registry with auto-injected OAuth envs and Bearer headers."""
     servers = db.query(MCPServer).order_by(MCPServer.updated_at.desc()).all()
-    # Enrich with active OAuth env variables if env token is empty
+    # Enrich with active OAuth env variables / Bearer header if env token is empty
     for s in servers:
-        oauth_env = oauth_manager.get_env_for_mcp(s.name)
+        oauth_env = oauth_manager.get_env_for_mcp(s.name, s.url)
         if oauth_env:
             merged_env = dict(s.env or {})
             for k, v in oauth_env.items():
@@ -170,13 +188,20 @@ def register_mcp_server(data: mcp_server_create, db: Session = Depends(get_db)):
     
     server_id = data.id.strip() if data.id else str(uuid.uuid4())
     
+    # Auto-inject OAuth environment / Bearer token if not explicitly provided
+    initial_env = dict(data.env or {})
+    oauth_env = oauth_manager.get_env_for_mcp(name_clean, data.url)
+    for k, v in oauth_env.items():
+        if not initial_env.get(k):
+            initial_env[k] = v
+    
     new_server = MCPServer(
         id=server_id,
         name=name_clean,
         type=server_type,
         command=data.command.strip() if data.command else None,
         args=data.args or [],
-        env=data.env or {},
+        env=initial_env,
         url=data.url.strip() if data.url else None
     )
     
@@ -191,6 +216,13 @@ def get_mcp_server(server_id: str, db: Session = Depends(get_db)):
     server = db.query(MCPServer).filter(MCPServer.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found.")
+    oauth_env = oauth_manager.get_env_for_mcp(server.name, server.url)
+    if oauth_env:
+        merged_env = dict(server.env or {})
+        for k, v in oauth_env.items():
+            if not merged_env.get(k):
+                merged_env[k] = v
+        server.env = merged_env
     return server
 
 @router.put("/{server_id}", response_model=mcp_server_response)
