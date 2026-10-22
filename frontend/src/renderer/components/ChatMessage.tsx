@@ -69,7 +69,43 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
 const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isUser = message.role === 'user';
   const [isExpanded, setIsExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+
+  const handleCopy = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const textToCopy = typeof message.content === 'object'
+      ? JSON.stringify(message.content, null, 2)
+      : String(message.content ?? '');
+
+    if (!textToCopy) return;
+
+    let success = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(textToCopy);
+        success = true;
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = textToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        success = document.execCommand('copy');
+        textArea.remove();
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard', err);
+    }
+
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   useGSAP(() => {
     if (messageRef.current) {
@@ -116,18 +152,37 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
         </div>
         
         <div className="flex flex-col max-w-[90%] w-full">
-            <button
-                type="button"
-                className="w-full flex items-center gap-2 cursor-pointer p-2 hover:bg-muted/50 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-left"
-                onClick={() => setIsExpanded(!isExpanded)}
-                aria-expanded={isExpanded}
-                aria-label={`Toggle details for ${message.agentName || 'System'} ${message.type?.replace('_', ' ')}`}
-            >
-                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    {message.agentName || 'System'} {message.type?.replace('_', ' ')}
-                </span>
-            </button>
+            <div className="w-full flex items-center justify-between hover:bg-muted/50 rounded-md transition-colors pr-2">
+                <button
+                    type="button"
+                    className="flex-1 flex items-center gap-2 cursor-pointer p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-left"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    aria-expanded={isExpanded}
+                    aria-label={`Toggle details for ${message.agentName || 'System'} ${message.type?.replace('_', ' ')}`}
+                >
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        {message.agentName || 'System'} {message.type?.replace('_', ' ')}
+                    </span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 flex items-center gap-1 shrink-0"
+                    title={copied ? "Copied!" : "Copy system output"}
+                    aria-label="Copy system output"
+                >
+                    {copied ? (
+                        <>
+                            <Check size={12} className="text-green-500" />
+                            <span className="text-[10px] text-green-500 font-medium">Copied</span>
+                        </>
+                    ) : (
+                        <Copy size={12} />
+                    )}
+                </button>
+            </div>
 
             <AnimatePresence>
                 {isExpanded && (
@@ -218,9 +273,30 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             </div>
           )}
         </div>
-        <span className="text-[10px] text-muted-foreground mt-1 px-1">
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </span>
+        <div className={cn(
+          "flex items-center gap-2 mt-1 px-1",
+          isUser && "flex-row-reverse"
+        )}>
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50"
+            title={copied ? "Copied!" : "Copy message"}
+            aria-label="Copy message"
+          >
+            {copied ? (
+              <>
+                <Check size={12} className="text-green-500" />
+                <span className="text-[10px] text-green-500 font-medium">Copied</span>
+              </>
+            ) : (
+              <Copy size={12} />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

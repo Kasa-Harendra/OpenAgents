@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   SquarePen, 
@@ -7,7 +7,11 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  Trash2
+  Trash2,
+  MoreVertical,
+  Pencil,
+  Check,
+  X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useChatStore } from '../stores/chatStore';
@@ -17,13 +21,30 @@ import gsap from 'gsap';
 
 const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { chats, activeChatId, setActiveChat, addChat, removeChat, loadConversations } = useChatStore();
+  const { chats, activeChatId, setActiveChat, addChat, removeChat, updateChatTitle, loadConversations } = useChatStore();
+  const [openMenuChatId, setOpenMenuChatId] = useState<string | null>(null);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState<string>('');
+  const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Close menu on click outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuChatId(null);
+      }
+    };
+    if (openMenuChatId) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      return () => document.removeEventListener('mousedown', handleOutsideClick);
+    }
+  }, [openMenuChatId]);
 
   return (
     <motion.aside
@@ -109,21 +130,109 @@ const Sidebar: React.FC = () => {
               <div className="relative z-10 flex items-center gap-3 w-full min-w-0">
                 <MessageSquare size={18} className="flex-shrink-0" />
                 {!isCollapsed && (
-                  <span className="text-sm font-medium truncate text-left flex-1">{chat.title}</span>
+                  editingChatId === chat.id ? (
+                    <div 
+                      className="flex items-center gap-1 flex-1 min-w-0 z-20"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (editTitle.trim()) {
+                              updateChatTitle(chat.id, editTitle.trim());
+                            }
+                            setEditingChatId(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingChatId(null);
+                          }
+                        }}
+                        autoFocus
+                        className="w-full bg-background border border-primary/50 text-foreground text-xs px-2 py-1 rounded-md focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editTitle.trim()) {
+                            updateChatTitle(chat.id, editTitle.trim());
+                          }
+                          setEditingChatId(null);
+                        }}
+                        className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground flex-shrink-0"
+                        title="Save title"
+                      >
+                        <Check size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingChatId(null)}
+                        className="p-1 hover:bg-accent rounded text-muted-foreground hover:text-foreground flex-shrink-0"
+                        title="Cancel"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-medium truncate text-left flex-1">{chat.title}</span>
+                  )
                 )}
-                {!isCollapsed && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeChat(chat.id);
-                    }}
-                    className="opacity-0 group-hover/item:opacity-100 p-1 hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-md transition-all flex-shrink-0"
-                    title="Delete conversation"
-                    aria-label={`Delete conversation ${chat.title}`}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+
+                {!isCollapsed && editingChatId !== chat.id && (
+                  <div className="relative flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuChatId(openMenuChatId === chat.id ? null : chat.id);
+                      }}
+                      className={cn(
+                        "p-1 rounded-md transition-all text-muted-foreground hover:text-foreground hover:bg-accent",
+                        openMenuChatId === chat.id ? "opacity-100 bg-accent text-foreground" : "opacity-0 group-hover/item:opacity-100"
+                      )}
+                      title="Chat options"
+                      aria-label={`Options for ${chat.title}`}
+                    >
+                      <MoreVertical size={14} />
+                    </button>
+
+                    {openMenuChatId === chat.id && (
+                      <div
+                        ref={menuRef}
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 top-full mt-1 w-32 rounded-xl bg-popover/95 backdrop-blur-md border border-border shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-150"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuChatId(null);
+                            setEditingChatId(chat.id);
+                            setEditTitle(chat.title);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
+                        >
+                          <Pencil size={13} className="text-muted-foreground" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuChatId(null);
+                            removeChat(chat.id);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors text-left"
+                        >
+                          <Trash2 size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </motion.div>
