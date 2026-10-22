@@ -2,14 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, 
   Cpu, 
-  Server, 
   Save, 
   Edit2, 
   X,
-  Plus,
-  Info,
-  User,
-  LogOut,
   FileText
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -39,7 +34,7 @@ interface AgentPrompt {
 const PROVIDERS = ['NONE', 'OLLAMA', 'OPENAI', 'GEMINI', 'ANTHROPIC', 'GROQ', 'OTHERS'];
 
 const SettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'agents' | 'mcp' | 'prompts' | 'account'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'prompts'>('agents');
   const [configs, setConfigs] = useState<AgentConfig[]>([]);
   const [prompts, setPrompts] = useState<AgentPrompt[]>([]);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -205,7 +200,7 @@ const SettingsPage: React.FC = () => {
             <SettingsIcon className="text-primary" size={24} />
             Settings
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Configure your AI agents and MCP servers</p>
+          <p className="text-sm text-muted-foreground mt-1">Configure your AI agents and system prompts</p>
         </div>
       </div>
 
@@ -224,18 +219,6 @@ const SettingsPage: React.FC = () => {
           Agent Configurations
         </button>
         <button
-          onClick={() => setActiveTab('mcp')}
-          className={cn(
-            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
-            activeTab === 'mcp' 
-              ? "border-primary text-primary" 
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Server size={16} />
-          MCP Servers
-        </button>
-        <button
           onClick={() => setActiveTab('prompts')}
           className={cn(
             "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
@@ -246,18 +229,6 @@ const SettingsPage: React.FC = () => {
         >
           <FileText size={16} />
           System Prompts
-        </button>
-        <button
-          onClick={() => setActiveTab('account')}
-          className={cn(
-            "px-6 py-3 text-sm font-medium border-b-2 transition-all flex items-center gap-2",
-            activeTab === 'account' 
-              ? "border-primary text-primary" 
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <User size={16} />
-          Account
         </button>
       </div>
 
@@ -410,44 +381,7 @@ const SettingsPage: React.FC = () => {
               ))
             )}
           </div>
-        ) : activeTab === 'mcp' ? (
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <Server size={20} className="text-primary" />
-                Configured MCP Servers
-              </h2>
-              <button 
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all active:scale-95 text-sm font-medium shadow-sm"
-                onClick={() => toast('MCP server adding functionality coming soon!', { icon: 'ℹ️' })}
-              >
-                <Plus size={16} />
-                Add Server
-              </button>
-            </div>
-
-            <div className="grid gap-4">
-              <div className="bg-card border border-border rounded-xl p-8 text-center space-y-4">
-                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                    <Info className="text-primary" size={32} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-medium">Model Context Protocol Integration</h3>
-                    <p className="text-sm text-muted-foreground max-w-md mx-auto mt-2">
-                      Connect your agents to external tools and data sources via MCP.
-                      Support for both stdio and SSE servers is built-in.
-                    </p>
-                  </div>
-                  <div className="pt-4">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-xs font-medium text-muted-foreground">
-                      <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                      Configuration UI in development
-                    </div>
-                  </div>
-              </div>
-            </div>
-          </div>
-        ) : activeTab === 'prompts' ? (
+        ) : (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -515,57 +449,6 @@ const SettingsPage: React.FC = () => {
                 </div>
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-              <div className="h-32 bg-gradient-to-r from-primary/10 to-primary/5 p-8 flex items-end">
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 bg-background rounded-2xl border-4 border-card shadow-xl flex items-center justify-center overflow-hidden">
-                    <User className="text-primary/40" size={40} />
-                  </div>
-                  <div className="mb-2">
-                    <h2 className="text-xl font-bold">User Profile</h2>
-                    <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-8 space-y-8">
-                <div className="grid gap-6">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-muted-foreground">Username</label>
-                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50">
-                      <span className="font-medium text-foreground">Google User</span>
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded uppercase">Verified</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-muted-foreground">Account Status</label>
-                    <p className="text-sm">Currently signed in with Google OAuth. Your tokens are securely stored locally.</p>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-border/50">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await axios.post(`${BASE_URL}/auth/logout`);
-                        toast.success('Logged out successfully');
-                        window.location.reload(); // Force reload to trigger AuthPopup
-                      } catch (error) {
-                        toast.error('Failed to sign out');
-                      }
-                    }}
-                    className="flex items-center gap-2 px-6 py-3 bg-destructive/10 text-destructive rounded-xl hover:bg-destructive hover:text-destructive-foreground transition-all font-medium"
-                  >
-                    <LogOut size={18} />
-                    Sign Out and Clear Session
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
