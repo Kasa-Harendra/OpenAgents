@@ -23,7 +23,6 @@ import {
   Copy,
   RefreshCw,
   CheckCircle2,
-  Lock,
   Code,
   Zap,
   Layers,
@@ -264,6 +263,92 @@ const SettingsPage: React.FC = () => {
     checking: boolean;
   }>({ status: null, checking: false });
 
+  // Dynamic OAuth Authorization via .well-known
+  const handleAuthorizeServerEndpoint = async (url: string) => {
+    if (!url.trim()) {
+      toast.error('Server URL is required for OAuth detection');
+      return;
+    }
+    try {
+      setCopiedCode(false);
+      setOauthModal({
+        isOpen: true,
+        provider: 'OAuth',
+        status: 'pending',
+        message: 'Detecting server OAuth details via .well-known...'
+      });
+
+      const res = await axios.post(`${BASE_URL}/mcp-servers/authorize`, { url: url.trim() });
+      const data = res.data;
+
+      if (data.status === 'error') {
+        setOauthModal(prev => prev ? { ...prev, status: 'error', error: data.error || 'Discovery failed' } : null);
+        toast.error(data.error || 'Authorization discovery failed');
+        return;
+      }
+
+      const providerName = data.provider || 'OAuth';
+      setOauthModal({
+        isOpen: true,
+        provider: providerName,
+        flowId: data.flow_id,
+        userCode: data.user_code,
+        verificationUri: data.verification_uri,
+        status: 'pending',
+        message: data.message || `Waiting for ${providerName} authorization in browser...`
+      });
+
+      if (data.flow_id) {
+        const flowId = data.flow_id;
+        const intervalId = setInterval(async () => {
+          try {
+            const check = await axios.get(`${BASE_URL}/oauth/flows/${flowId}`);
+            if (check.data.status === 'success') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'success', message: 'Authentication Successful!' } : null);
+              toast.success(`Server authorized successfully!`);
+
+              if (mcpForm.url) {
+                probeMcpUrl(mcpForm.url);
+              }
+              axios.post(`${BASE_URL}/mcp-servers/check`, {
+                server_id: editingMcpId || undefined,
+                name: mcpForm.name,
+                type: mcpForm.type,
+                url: mcpForm.url.trim(),
+                command: mcpForm.command.trim(),
+                args: mcpForm.args.trim() ? mcpForm.args.trim().split(/\s+/) : [],
+                env: {}
+              }).then(checkRes => {
+                setModalCheckStatus({
+                  status: checkRes.data.status,
+                  message: checkRes.data.message,
+                  checking: false
+                });
+                fetchMcpServers();
+              }).catch(() => {});
+
+              setTimeout(() => {
+                setOauthModal(null);
+              }, 1600);
+              fetchOAuthProviders();
+              fetchMcpServers();
+            } else if (check.data.status === 'error' || check.data.status === 'expired') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'error', error: check.data.error || 'Authorization failed' } : null);
+            }
+          } catch (e) {
+            // Keep polling
+          }
+        }, 2200);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Authorization failed';
+      setOauthModal(prev => prev ? { ...prev, status: 'error', error: msg } : null);
+      toast.error(`Authorization error: ${msg}`);
+    }
+  };
+
   const handleRunCheckServerInModal = async () => {
     if (mcpForm.type === 'sse' && !mcpForm.url.trim()) {
       toast.error('Please enter an SSE URL to run connection check');
@@ -304,7 +389,11 @@ const SettingsPage: React.FC = () => {
 
       if (data.status === 'auth_required') {
         toast.info(`Authentication required for ${data.resource_name || data.provider?.toUpperCase()}. Launching authorization flow...`);
-        handleConnectOAuth(data.provider || 'github');
+        if (mcpForm.url) {
+          handleAuthorizeServerEndpoint(mcpForm.url);
+        } else {
+          handleConnectOAuth(data.provider || 'github');
+        }
       } else if (data.status === 'online') {
         toast.success(data.message || 'Server is online and working!');
       } else if (data.status === 'issue') {
@@ -328,7 +417,11 @@ const SettingsPage: React.FC = () => {
       const data = res.data;
       if (data.status === 'auth_required') {
         toast.info(`Authentication required for ${server.name}. Launching authorization flow...`);
-        handleConnectOAuth(data.provider || 'github');
+        if (server.url) {
+          handleAuthorizeServerEndpoint(server.url);
+        } else {
+          handleConnectOAuth(data.provider || 'github');
+        }
       } else if (data.status === 'online') {
         toast.success(`${server.name} is online and operational!`);
       } else {
@@ -901,73 +994,30 @@ const SettingsPage: React.FC = () => {
     setMcpModalTab(tab);
   };
 
-  const handleLoadRawJsonTemplate = (templateKey: 'github' | 'googledrive' | 'slack' | 'custom_sse' | 'claude_desktop') => {
+  const handleLoadRawJsonTemplate = (templateKey: 'remote_sse' | 'stdio_tool' | 'claude_desktop') => {
     let tpl = {};
-    if (templateKey === 'github') {
+    if (templateKey === 'remote_sse') {
       tpl = {
-        name: 'GitHub',
-        type: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-github'],
-        env: {
-          GITHUB_PERSONAL_ACCESS_TOKEN: ''
-        },
-        oauth_provider: 'github'
-      };
-      setJsonOAuthProvider('github');
-    } else if (templateKey === 'googledrive') {
-      tpl = {
-        name: 'Google Drive',
-        type: 'stdio',
-        command: 'npx',
-        args: ['-y', '@piotr-agier/google-drive-mcp'],
-        env: {},
-        oauth_provider: 'google'
-      };
-      setJsonOAuthProvider('google');
-    } else if (templateKey === 'slack') {
-      tpl = {
-        name: 'Slack',
-        type: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-slack'],
-        env: {
-          SLACK_BOT_TOKEN: '',
-          SLACK_TEAM_ID: ''
-        },
-        oauth_provider: 'slack'
-      };
-      setJsonOAuthProvider('slack');
-    } else if (templateKey === 'custom_sse') {
-      tpl = {
-        name: 'Remote Custom MCP',
+        name: 'Remote MCP Server',
         type: 'sse',
-        url: 'https://mcp.mycompany.com/sse',
-        env: {
-          AUTHORIZATION_TOKEN: ''
-        },
-        oauth: {
-          provider: 'custom',
-          client_id: 'client_123',
-          auth_url: 'https://auth.mycompany.com/authorize',
-          token_url: 'https://auth.mycompany.com/token',
-          scopes: 'read write'
-        }
+        url: 'https://api.githubcopilot.com/mcp/',
+        env: {}
       };
-      setJsonOAuthProvider('custom');
-      setCustomOAuthParams({
-        client_id: 'client_123',
-        auth_url: 'https://auth.mycompany.com/authorize',
-        token_url: 'https://auth.mycompany.com/token',
-        scopes: 'read write',
-        redirect_port: 8765
-      });
+    } else if (templateKey === 'stdio_tool') {
+      tpl = {
+        name: 'Filesystem Tool',
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-filesystem', './workspace'],
+        env: {}
+      };
     } else if (templateKey === 'claude_desktop') {
       tpl = {
-        filesystem: {
-          command: 'npx',
-          args: ['-y', '@modelcontextprotocol/server-filesystem', './workspace'],
-          env: {}
+        mcpServers: {
+          'copilot-mcp': {
+            type: 'sse',
+            url: 'https://api.githubcopilot.com/mcp/'
+          }
         }
       };
     }
@@ -990,6 +1040,26 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleTriggerAuthFromRawJson = async () => {
+    let targetUrl = mcpForm.url;
+    try {
+      if (rawJsonInput.trim()) {
+        const parsed = JSON.parse(rawJsonInput);
+        if (parsed.url) {
+          targetUrl = parsed.url;
+        } else {
+          const keys = Object.keys(parsed);
+          if (keys.length === 1 && parsed[keys[0]]?.url) {
+            targetUrl = parsed[keys[0]].url;
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (targetUrl && targetUrl.startsWith('http')) {
+      handleAuthorizeServerEndpoint(targetUrl);
+      return;
+    }
+
     let providerToUse = jsonOAuthProvider;
     let customParams = { ...customOAuthParams };
 
@@ -1741,81 +1811,66 @@ const SettingsPage: React.FC = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                {oauthProviders.map((provider) => {
-                  return (
-                    <div
-                      key={provider.id}
-                      className={cn(
-                        "p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 text-left",
-                        provider.connected 
-                          ? "bg-emerald-500/[0.04] border-emerald-500/30" 
-                          : "bg-muted/20 border-border hover:border-primary/40"
-                      )}
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-xs text-foreground flex items-center gap-1.5">
-                            {provider.id === 'github' ? (
-                              <Terminal size={14} className="text-muted-foreground" />
-                            ) : provider.id === 'google' ? (
-                              <Globe size={14} className="text-blue-500" />
-                            ) : (
-                              <Key size={14} className="text-purple-500" />
-                            )}
-                            {provider.name}
-                          </span>
-                          <span className={cn(
-                            "text-[10px] px-1.5 py-0.2 rounded-full font-semibold uppercase tracking-wider",
-                            provider.connected 
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30" 
-                              : "bg-muted text-muted-foreground"
-                          )}>
-                            {provider.connected ? "Connected" : "Not Linked"}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
-                          {provider.description}
-                        </p>
-                      </div>
-
-                      <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
-                        {provider.connected ? (
-                          <>
-                            <div className="min-w-0 flex-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium truncate">
-                              <CheckCircle2 size={13} className="shrink-0" />
-                              <span className="truncate">{provider.user || "Active"}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDisconnectOAuth(provider.id)}
-                              className="px-2 py-1 text-[11px] text-destructive hover:bg-destructive/10 rounded transition-colors shrink-0"
-                              title="Disconnect account"
-                            >
-                              Disconnect
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Lock size={11} className="text-muted-foreground/70" />
-                              Zero-token setup
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleConnectOAuth(provider.id)}
-                              className="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm active:scale-95 flex items-center gap-1 shrink-0"
-                            >
-                              <span>Connect</span>
-                              <ExternalLink size={11} />
-                            </button>
-                          </>
+              {oauthProviders.length === 0 ? (
+                <div className="p-5 rounded-xl border border-dashed border-border/70 bg-muted/10 text-center space-y-1.5">
+                  <Key size={18} className="mx-auto text-muted-foreground/60" />
+                  <p className="text-xs font-semibold text-foreground">No Connected OAuth Credentials</p>
+                  <p className="text-[11px] text-muted-foreground max-w-md mx-auto leading-relaxed">
+                    When you run live checks and authorize protected MCP servers (e.g. via RFC 9728 <code className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded">.well-known</code> discovery), their authenticated tokens and active accounts will be managed here.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  {oauthProviders.map((provider) => {
+                    return (
+                      <div
+                        key={provider.id}
+                        className={cn(
+                          "p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 text-left",
+                          provider.connected 
+                            ? "bg-emerald-500/[0.04] border-emerald-500/30" 
+                            : "bg-muted/20 border-border hover:border-primary/40"
                         )}
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-xs text-foreground flex items-center gap-1.5 truncate">
+                              <Key size={14} className="text-amber-500 shrink-0" />
+                              <span className="truncate">{provider.name}</span>
+                            </span>
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.2 rounded-full font-semibold uppercase tracking-wider shrink-0",
+                              provider.connected 
+                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30" 
+                                : "bg-muted text-muted-foreground"
+                            )}>
+                              {provider.connected ? "Active" : "Not Linked"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                            {provider.description}
+                          </p>
+                        </div>
+
+                        <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium truncate">
+                            <CheckCircle2 size={13} className="shrink-0" />
+                            <span className="truncate">{provider.user || "Authorized"}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDisconnectOAuth(provider.id)}
+                            className="px-2 py-1 text-[11px] text-destructive hover:bg-destructive/10 rounded transition-colors shrink-0"
+                            title="Disconnect account"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Popular Presets Quick-Add Section */}
@@ -2655,7 +2710,13 @@ const SettingsPage: React.FC = () => {
                           {!probeResult.has_token && (
                             <button
                               type="button"
-                              onClick={() => handleConnectOAuth(probeResult.provider || 'github')}
+                              onClick={() => {
+                                if (mcpForm.url) {
+                                  handleAuthorizeServerEndpoint(mcpForm.url);
+                                } else {
+                                  handleConnectOAuth(probeResult.provider || 'github');
+                                }
+                              }}
                               className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-md transition-all shadow-sm active:scale-95 shrink-0 flex items-center gap-1"
                             >
                               <Zap size={12} className="fill-slate-950" />
@@ -2804,31 +2865,17 @@ const SettingsPage: React.FC = () => {
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleLoadRawJsonTemplate('github')}
-                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
+                      onClick={() => handleLoadRawJsonTemplate('remote_sse')}
+                      className="px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-mono border border-primary/20 transition-colors"
                     >
-                      + GitHub
+                      + Remote SSE Server
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleLoadRawJsonTemplate('googledrive')}
+                      onClick={() => handleLoadRawJsonTemplate('stdio_tool')}
                       className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
                     >
-                      + Google Drive
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLoadRawJsonTemplate('slack')}
-                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
-                    >
-                      + Slack
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleLoadRawJsonTemplate('custom_sse')}
-                      className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 text-[11px] font-mono border border-purple-500/20 transition-colors"
-                    >
-                      + Remote SSE w/ OAuth
+                      + Local stdio Tool
                     </button>
                     <button
                       type="button"
@@ -2875,7 +2922,15 @@ const SettingsPage: React.FC = () => {
                       {!probeResult.has_token && (
                         <button
                           type="button"
-                          onClick={() => handleConnectOAuth(probeResult.provider || 'github')}
+                          onClick={() => {
+                            if (mcpForm.url) {
+                              handleAuthorizeServerEndpoint(mcpForm.url);
+                            } else if (probeResult.metadata_url) {
+                              handleAuthorizeServerEndpoint(probeResult.metadata_url);
+                            } else {
+                              handleConnectOAuth(probeResult.provider || 'github');
+                            }
+                          }}
                           className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-md transition-all shadow-sm active:scale-95 shrink-0 flex items-center gap-1"
                         >
                           <Zap size={12} className="fill-slate-950" />
@@ -2981,84 +3036,30 @@ const SettingsPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Dedicated Manual OAuth Trigger Hub */}
+                {/* Dynamic Server OAuth Detection & Authorization */}
                 <div className="p-4 rounded-xl bg-gradient-to-br from-card to-muted/20 border border-primary/25 space-y-3 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                         <Zap size={14} className="text-amber-500 fill-amber-500" />
-                        <span>Manually Trigger OAuth Authorization</span>
+                        <span>Dynamic Server OAuth Authorization</span>
                       </div>
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        Trigger the authentication flow directly. Captured tokens will automatically be injected into the JSON <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-foreground/80">env</code> block.
+                        Detects OAuth details directly from the remote server via RFC 9728 <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-foreground/80">.well-known/oauth-protected-resource</code> and initiates the authorization flow.
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-foreground">Select OAuth Provider</label>
-                      <select
-                        value={jsonOAuthProvider}
-                        onChange={(e) => setJsonOAuthProvider(e.target.value as any)}
-                        className="w-full bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
-                      >
-                        <option value="github">GitHub (Zero-Config Device Flow)</option>
-                        <option value="google">Google Workspace (InstalledAppFlow)</option>
-                        <option value="slack">Slack (OAuth PKCE)</option>
-                        <option value="custom">Custom Remote MCP Endpoints (PKCE)</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={handleTriggerAuthFromRawJson}
-                        className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-semibold text-xs rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
-                      >
-                        <Zap size={13} className="fill-slate-950" />
-                        <span>Authorize & Inject Tokens</span>
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleTriggerAuthFromRawJson}
+                      className="py-2 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-semibold text-xs rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                    >
+                      <Zap size={13} className="fill-slate-950" />
+                      <span>Detect & Authorize via .well-known</span>
+                    </button>
                   </div>
-
-                  {jsonOAuthProvider === 'custom' && (
-                    <div className="p-3 bg-background/80 rounded-lg border border-border/80 space-y-2 mt-2">
-                      <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
-                        Custom OAuth PKCE Parameters
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={customOAuthParams.client_id}
-                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, client_id: e.target.value })}
-                          placeholder="Client ID *"
-                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={customOAuthParams.scopes}
-                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, scopes: e.target.value })}
-                          placeholder="Scopes (e.g. read write)"
-                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={customOAuthParams.auth_url}
-                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, auth_url: e.target.value })}
-                          placeholder="Authorization URL *"
-                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none col-span-2"
-                        />
-                        <input
-                          type="text"
-                          value={customOAuthParams.token_url}
-                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, token_url: e.target.value })}
-                          placeholder="Token URL *"
-                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none col-span-2"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}

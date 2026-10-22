@@ -16,17 +16,22 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 
 
 class GenericOAuthRequest(BaseModel):
-    client_id: str
+    client_id: Optional[str] = "openagents-mcp-client"
     auth_url: str
     token_url: str
-    scopes: str = "read"
+    scopes: str = "read write"
     redirect_port: int = 8765
+
+
+class AuthorizeUrlRequest(BaseModel):
+    url: str
+    client_id: Optional[str] = None
 
 
 @router.get("/providers")
 async def get_providers():
     """
-    List all supported OAuth providers and their current connection status.
+    List all active OAuth connections dynamically from stored tokens.
     """
     try:
         return oauth_manager.get_providers_status()
@@ -34,32 +39,38 @@ async def get_providers():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/authorize")
+async def authorize_url(req: AuthorizeUrlRequest):
+    """
+    Dynamically authorizes any protected MCP server endpoint via RFC 9728 .well-known.
+    """
+    res = oauth_manager.authorize_mcp_endpoint(req.url, client_id=req.client_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("error", "Failed to initiate authorization"))
+    return res
+
+
 @router.post("/authorize/{provider}")
-async def authorize_provider(provider: str, generic_req: Optional[GenericOAuthRequest] = None):
+async def authorize_provider(
+    provider: str,
+    generic_req: Optional[GenericOAuthRequest] = None,
+    url: Optional[str] = None
+):
     """
-    Start OAuth flow for a provider.
-    - 'github': Initiates zero-config GitHub Device Flow, copies code, opens browser.
-    - 'google': Initiates Google InstalledAppFlow with loopback redirect.
-    - other: Uses generic PKCE loopback flow if config provided.
+    Start OAuth flow. If URL or endpoints are provided, initiates dynamic flow.
     """
-    provider_clean = provider.lower()
-
-    if provider_clean == "github":
-        res = oauth_manager.start_github_device_flow()
+    # If the provider string itself is a URL or url param was provided
+    target_url = url or (provider if provider.startswith(("http://", "https://")) else None)
+    if target_url:
+        res = oauth_manager.authorize_mcp_endpoint(target_url)
         if res.get("status") == "error":
-            raise HTTPException(status_code=500, detail=res.get("error", "Failed to initiate GitHub authorization"))
+            raise HTTPException(status_code=400, detail=res.get("error", "Failed to initiate authorization"))
         return res
 
-    elif provider_clean == "google":
-        res = oauth_manager.start_google_flow()
-        if res.get("status") == "error":
-            raise HTTPException(status_code=500, detail=res.get("error", "Failed to initiate Google authorization"))
-        return res
-
-    elif generic_req:
+    if generic_req:
         res = oauth_manager.start_generic_pkce_flow(
-            provider=provider_clean,
-            client_id=generic_req.client_id,
+            provider=provider.lower(),
+            client_id=generic_req.client_id or "openagents-mcp-client",
             auth_url=generic_req.auth_url,
             token_url=generic_req.token_url,
             scopes=generic_req.scopes,
@@ -67,11 +78,10 @@ async def authorize_provider(provider: str, generic_req: Optional[GenericOAuthRe
         )
         return res
 
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Provider '{provider}' is not natively pre-configured. Please provide OAuth endpoints.",
-        )
+    raise HTTPException(
+        status_code=400,
+        detail=f"Please provide an MCP server URL or OAuth endpoints to authorize {provider}.",
+    )
 
 
 @router.get("/flows/{flow_id}")
@@ -88,7 +98,7 @@ async def get_flow_status(flow_id: str):
 @router.delete("/providers/{provider}")
 async def disconnect_provider(provider: str):
     """
-    Disconnect a provider and remove stored OAuth tokens.
+    Disconnect a provider / server and remove stored OAuth tokens.
     """
     success = oauth_manager.delete_provider_token(provider)
     if success:
@@ -97,8 +107,8 @@ async def disconnect_provider(provider: str):
 
 
 @router.get("/env/{server_name}")
-async def get_mcp_env(server_name: str):
+async def get_mcp_env(server_name: str, url: Optional[str] = None):
     """
     Retrieve auto-injected environment variables for an MCP server from active OAuth tokens.
     """
-    return oauth_manager.get_env_for_mcp(server_name)
+    return oauth_manager.get_env_for_mcp(server_name, url=url)

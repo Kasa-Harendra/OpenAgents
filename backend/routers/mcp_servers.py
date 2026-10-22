@@ -20,46 +20,10 @@ router = APIRouter(prefix="/mcp-servers")
 class ProbeRequest(BaseModel):
     url: str
 
+class AuthorizeServerRequest(BaseModel):
+    url: str
+
 POPULAR_MCP_PRESETS = [
-    {
-        "id": "preset-github-copilot",
-        "name": "GitHub Copilot Remote MCP",
-        "type": "sse",
-        "url": "https://api.githubcopilot.com/mcp/",
-        "env": {},
-        "description": "Official GitHub Copilot Remote MCP (SSE) for repositories, code search, PRs, and workflow logs",
-        "oauth_provider": "github"
-    },
-    {
-        "id": "preset-github",
-        "name": "GitHub",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-github"],
-        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
-        "description": "Repository management, issues, pull requests, and git search",
-        "oauth_provider": "github"
-    },
-    {
-        "id": "preset-google-drive",
-        "name": "Google Drive",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@piotr-agier/google-drive-mcp"],
-        "env": {},
-        "description": "Read, search, upload, and organize Google Drive files and folders",
-        "oauth_provider": "google"
-    },
-    {
-        "id": "preset-gmail",
-        "name": "Gmail",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@shinzolabs/gmail-mcp"],
-        "env": {},
-        "description": "Send emails, search messages, and manage Gmail inbox with OAuth",
-        "oauth_provider": "google"
-    },
     {
         "id": "preset-filesystem",
         "name": "Filesystem",
@@ -67,25 +31,7 @@ POPULAR_MCP_PRESETS = [
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
         "env": {},
-        "description": "Secure local filesystem operations, directory traversal, and editing"
-    },
-    {
-        "id": "preset-postgres",
-        "name": "PostgreSQL",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost:5432/mydb"],
-        "env": {},
-        "description": "PostgreSQL database querying, schema inspection, and table analysis"
-    },
-    {
-        "id": "preset-sqlite",
-        "name": "SQLite",
-        "type": "stdio",
-        "command": "uvx",
-        "args": ["mcp-server-sqlite", "--db-path", "./test.db"],
-        "env": {},
-        "description": "Local SQLite database querying and schema inspection"
+        "description": "Local filesystem operations, directory traversal, and editing"
     },
     {
         "id": "preset-fetch",
@@ -97,13 +43,13 @@ POPULAR_MCP_PRESETS = [
         "description": "HTTP web page scraping and content conversion"
     },
     {
-        "id": "preset-brave-search",
-        "name": "Brave Search",
+        "id": "preset-sqlite",
+        "name": "SQLite",
         "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-        "env": {"BRAVE_API_KEY": ""},
-        "description": "Real-time internet web search and news search API"
+        "command": "uvx",
+        "args": ["mcp-server-sqlite", "--db-path", "./test.db"],
+        "env": {},
+        "description": "Local SQLite database querying and schema inspection"
     },
     {
         "id": "preset-memory",
@@ -113,36 +59,21 @@ POPULAR_MCP_PRESETS = [
         "args": ["-y", "@modelcontextprotocol/server-memory"],
         "env": {},
         "description": "Persistent knowledge graph memory across agent turns"
-    },
-    {
-        "id": "preset-slack",
-        "name": "Slack",
-        "type": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-slack"],
-        "env": {"SLACK_BOT_TOKEN": "", "SLACK_TEAM_ID": ""},
-        "description": "Slack channel management and message posting",
-        "oauth_provider": "slack"
     }
 ]
 
 @router.get("/presets")
 def get_mcp_presets():
-    """Returns curated popular MCP server presets for quick registration enriched with OAuth connection status."""
-    providers_status = {p["id"]: p for p in oauth_manager.get_providers_status()}
-    enriched = []
-    for preset in POPULAR_MCP_PRESETS:
-        p_copy = dict(preset)
-        oauth_pid = preset.get("oauth_provider")
-        if oauth_pid and oauth_pid in providers_status:
-            p_status = providers_status[oauth_pid]
-            p_copy["oauth_connected"] = p_status.get("connected", False)
-            p_copy["oauth_user"] = p_status.get("user")
-        else:
-            p_copy["oauth_connected"] = False
-            p_copy["oauth_user"] = None
-        enriched.append(p_copy)
-    return enriched
+    """Returns 4 standard utility MCP server presets."""
+    return POPULAR_MCP_PRESETS
+
+@router.post("/authorize")
+def authorize_mcp_server(data: AuthorizeServerRequest):
+    """
+    Dynamically inspects a remote MCP server via .well-known/oauth-protected-resource,
+    identifies the authorization server, and triggers the OAuth authorization flow.
+    """
+    return oauth_manager.authorize_mcp_endpoint(data.url)
 
 class CheckServerRequest(BaseModel):
     server_id: Optional[str] = None
@@ -187,9 +118,11 @@ def check_mcp_server(data: CheckServerRequest, db: Session = Depends(get_db)):
         # Prepare headers
         req_headers = {}
         for k, v in (data.env or {}).items():
-            if k.lower() == "authorization" and v:
+            if not v:
+                continue
+            if k.lower() == "authorization":
                 req_headers["Authorization"] = v
-            elif (k.upper() in ["GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "SLACK_BOT_TOKEN", "TOKEN"]) and v:
+            elif k.upper().endswith("_TOKEN") or k.upper().endswith("_KEY") or k.upper() in ["TOKEN", "API_KEY", "BEARER_TOKEN", "ACCESS_TOKEN"]:
                 if "Authorization" not in req_headers:
                     req_headers["Authorization"] = f"Bearer {v}"
         

@@ -9,7 +9,7 @@ import secrets
 import threading
 import subprocess
 import webbrowser
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -21,20 +21,6 @@ CREDENTIALS_DIR = os.path.join(OPENAGENTS_DIR, "credentials")
 os.makedirs(CREDENTIALS_DIR, exist_ok=True)
 
 OAUTH_TOKENS_FILE = os.path.join(CREDENTIALS_DIR, "oauth_tokens.json")
-GOOGLE_CREDENTIALS_FILE = os.path.join(CREDENTIALS_DIR, "credentials.json")
-GOOGLE_TOKEN_FILE = os.path.join(CREDENTIALS_DIR, "token.json")
-
-# Public Client IDs (No client secret required)
-GITHUB_PUBLIC_CLIENT_ID = "Iv1.b507a08c87ecfe98"  # Copilot / VS Code Device Auth Client
-GITHUB_DEFAULT_SCOPES = "repo,read:org,read:user,user:email"
-
-GOOGLE_SCOPES = [
-    "https://mail.google.com/",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/userinfo.email",
-]
 
 
 class OAuthManager:
@@ -61,6 +47,9 @@ class OAuthManager:
             except Exception as e:
                 print(f"[OAuthManager] Error creating tokens file: {e}")
 
+    # =========================================================================
+    # Token Storage Management (Generic & Dynamic)
+    # =========================================================================
     def load_all_tokens(self) -> Dict[str, Any]:
         with self._lock:
             if not os.path.exists(OAUTH_TOKENS_FILE):
@@ -72,7 +61,8 @@ class OAuthManager:
                 print(f"[OAuthManager] Error loading tokens: {e}")
                 return {}
 
-    def save_provider_token(self, provider: str, token_data: Dict[str, Any]):
+    def save_provider_token(self, identifier: str, token_data: Dict[str, Any]):
+        key = identifier.lower().strip()
         with self._lock:
             all_tokens = {}
             if os.path.exists(OAUTH_TOKENS_FILE):
@@ -82,9 +72,9 @@ class OAuthManager:
                 except Exception:
                     all_tokens = {}
 
-            all_tokens[provider.lower()] = {
+            all_tokens[key] = {
                 **token_data,
-                "provider": provider.lower(),
+                "identifier": key,
                 "updated_at": int(time.time()),
             }
 
@@ -95,164 +85,426 @@ class OAuthManager:
             except Exception as e:
                 print(f"[OAuthManager] Failed to write token file: {e}")
 
-    def delete_provider_token(self, provider: str) -> bool:
-        provider = provider.lower()
+    def delete_provider_token(self, identifier: str) -> bool:
+        key = identifier.lower().strip()
         with self._lock:
             if not os.path.exists(OAUTH_TOKENS_FILE):
                 return False
             try:
                 with open(OAUTH_TOKENS_FILE, "r") as f:
                     all_tokens = json.load(f)
-                if provider in all_tokens:
-                    del all_tokens[provider]
+                if key in all_tokens:
+                    del all_tokens[key]
                     with open(OAUTH_TOKENS_FILE, "w") as f:
                         json.dump(all_tokens, f, indent=2)
                     os.chmod(OAUTH_TOKENS_FILE, 0o600)
-
-                    # Also clean up provider-specific legacy files if needed
-                    if provider == "google" and os.path.exists(GOOGLE_TOKEN_FILE):
-                        try:
-                            os.remove(GOOGLE_TOKEN_FILE)
-                        except Exception:
-                            pass
                     return True
                 return False
             except Exception as e:
-                print(f"[OAuthManager] Error deleting token for {provider}: {e}")
+                print(f"[OAuthManager] Error deleting token for {key}: {e}")
                 return False
 
     def get_providers_status(self) -> List[Dict[str, Any]]:
+        """
+        Dynamically returns the status of all connected OAuth credentials.
+        No hardcoded vendor lists.
+        """
         tokens = self.load_all_tokens()
         results = []
 
-        # Supported preset providers
-        known_providers = [
-            {
-                "id": "github",
-                "name": "GitHub",
-                "description": "Authenticate for Git repositories, PRs, issues, and search tools",
-                "icon": "github",
-                "type": "device_code",
-                "category": "Code & Development",
-            },
-            {
-                "id": "google",
-                "name": "Google (Workspace & Drive)",
-                "description": "Connect Gmail, Google Drive, Google Calendar, and Docs MCPs",
-                "icon": "google",
-                "type": "pkce_loopback",
-                "category": "Productivity & Workspace",
-            },
-            {
-                "id": "slack",
-                "name": "Slack",
-                "description": "Connect Slack channels, direct messages, and team notifications",
-                "icon": "slack",
-                "type": "pkce_loopback",
-                "category": "Communication",
-            },
-        ]
+        for key, entry in tokens.items():
+            if not isinstance(entry, dict) or not entry.get("access_token"):
+                continue
 
-        for p in known_providers:
-            pid = p["id"]
-            token_entry = tokens.get(pid)
-            is_connected = False
-            user_display = None
-            expires_at = None
-
-            if token_entry and token_entry.get("access_token"):
-                is_connected = True
-                user_display = token_entry.get("user") or token_entry.get("email") or token_entry.get("name")
-                expires_at = token_entry.get("expires_at")
+            user_display = entry.get("user") or entry.get("email") or entry.get("name") or "Connected"
+            resource_name = entry.get("resource_name") or entry.get("name") or key
 
             results.append({
-                **p,
-                "connected": is_connected,
+                "id": key,
+                "name": resource_name,
+                "description": entry.get("description") or f"Authenticated credentials for {resource_name}",
+                "connected": True,
                 "user": user_display,
-                "avatar_url": token_entry.get("avatar_url") if token_entry else None,
-                "scopes": token_entry.get("scope") if token_entry else None,
-                "expires_at": expires_at,
-                "updated_at": token_entry.get("updated_at") if token_entry else None,
+                "avatar_url": entry.get("avatar_url"),
+                "scopes": entry.get("scope"),
+                "expires_at": entry.get("expires_at"),
+                "updated_at": entry.get("updated_at"),
             })
 
         return results
 
-    def get_valid_token(self, provider: str) -> Optional[str]:
-        provider = provider.lower()
+    def get_valid_token(self, identifier: str) -> Optional[str]:
+        """
+        Retrieves a valid access token for an identifier or URL host, refreshing if expired.
+        """
+        if not identifier:
+            return None
+
+        key = identifier.lower().strip()
         tokens = self.load_all_tokens()
-        entry = tokens.get(provider)
+        entry = tokens.get(key)
+
+        # Fallback: check matching host or URL substring in tokens
+        if not entry:
+            for stored_k, stored_v in tokens.items():
+                if stored_k in key or key in stored_k:
+                    entry = stored_v
+                    key = stored_k
+                    break
+
         if not entry or not entry.get("access_token"):
             return None
 
-        # Check expiration
+        # Check expiration and attempt RFC 6749 refresh grant if token_endpoint is available
         expires_at = entry.get("expires_at")
         now = int(time.time())
 
-        # If expires in next 60s and we have a refresh token, refresh it
         if expires_at and (now + 60 >= expires_at):
             refresh_token = entry.get("refresh_token")
-            if refresh_token:
+            token_endpoint = entry.get("token_endpoint")
+            client_id = entry.get("client_id")
+
+            if refresh_token and token_endpoint:
                 try:
-                    refreshed = self._refresh_token(provider, refresh_token, entry)
-                    if refreshed:
-                        return refreshed
+                    data = {
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    }
+                    if client_id:
+                        data["client_id"] = client_id
+
+                    refreshed = requests.post(token_endpoint, data=data, timeout=10)
+                    if refreshed.status_code == 200:
+                        ref_data = refreshed.json()
+                        new_token = ref_data.get("access_token")
+                        if new_token:
+                            entry["access_token"] = new_token
+                            if "expires_in" in ref_data:
+                                entry["expires_at"] = now + int(ref_data["expires_in"])
+                            if "refresh_token" in ref_data:
+                                entry["refresh_token"] = ref_data["refresh_token"]
+                            self.save_provider_token(key, entry)
+                            return new_token
                 except Exception as e:
-                    print(f"[OAuthManager] Token refresh failed for {provider}: {e}")
+                    print(f"[OAuthManager] Generic token refresh failed for {key}: {e}")
 
         return entry.get("access_token")
 
-    def _refresh_token(self, provider: str, refresh_token: str, entry: Dict[str, Any]) -> Optional[str]:
-        if provider == "google":
-            from google.oauth2.credentials import Credentials
-            from google.auth.transport.requests import Request
+    # =========================================================================
+    # Environment & Authorization Header Resolution
+    # =========================================================================
+    def get_env_for_mcp(self, server_name: str, url: Optional[str] = None) -> Dict[str, str]:
+        """
+        Dynamically returns Authorization headers for an MCP server
+        based on active OAuth credentials discovered for its URL or server name.
+        """
+        env: Dict[str, str] = {}
+        tokens = self.load_all_tokens()
+        if not tokens:
+            return env
 
-            if os.path.exists(GOOGLE_TOKEN_FILE):
-                try:
-                    creds = Credentials.from_authorized_user_file(GOOGLE_TOKEN_FILE, GOOGLE_SCOPES)
-                    creds.refresh(Request())
-                    new_token = creds.token
-                    entry["access_token"] = new_token
-                    if creds.expiry:
-                        entry["expires_at"] = int(creds.expiry.timestamp())
-                    self.save_provider_token("google", entry)
-                    with open(GOOGLE_TOKEN_FILE, "w") as f:
-                        f.write(creds.to_json())
-                    return new_token
-                except Exception as e:
-                    print(f"[OAuthManager] Google refresh via creds failed: {e}")
+        # 1. Check by URL netloc / path
+        if url:
+            parsed = urlparse(url)
+            host = parsed.netloc.lower()
+            full_url = url.lower()
 
-        elif provider == "github":
-            # GitHub tokens generated via device flow typically don't expire unless revoked
-            return entry.get("access_token")
+            for key in [full_url, host, parsed.scheme + "://" + host]:
+                token = self.get_valid_token(key)
+                if token:
+                    env["Authorization"] = f"Bearer {token}"
+                    return env
 
-        return None
+            # Check if any stored key matches the host
+            for prov_key in tokens:
+                if prov_key in host or host in prov_key:
+                    token = self.get_valid_token(prov_key)
+                    if token:
+                        env["Authorization"] = f"Bearer {token}"
+                        return env
+
+        # 2. Check by server name
+        if server_name:
+            s_clean = server_name.lower().strip()
+            for prov_key in tokens:
+                if prov_key == s_clean or prov_key in s_clean:
+                    token = self.get_valid_token(prov_key)
+                    if token:
+                        env["Authorization"] = f"Bearer {token}"
+                        return env
+
+        return env
 
     # =========================================================================
-    # GitHub Device Authorization Flow
+    # Dynamic RFC 9728 & RFC 8414 Probing
     # =========================================================================
-    def start_github_device_flow(self) -> Dict[str, Any]:
+    def probe_endpoint(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """
+        Inspects an HTTP/SSE MCP endpoint dynamically without hardcoded URLs.
+        Detects RFC 9728 OAuth Protected Resource Metadata and RFC 8414 Authorization Server Metadata.
+        """
+        import re
+
+        if not url or not url.startswith(("http://", "https://")):
+            return {"status": "issue", "auth_required": False, "message": "Invalid or missing HTTP/HTTPS URL"}
+
+        req_headers = dict(headers or {})
+        if "Accept" not in req_headers:
+            req_headers["Accept"] = "text/event-stream, application/json, */*"
+
+        try:
+            res = requests.get(url, headers=req_headers, timeout=6)
+            if res.status_code in [200, 204]:
+                return {
+                    "status": "online",
+                    "auth_required": False,
+                    "status_code": res.status_code,
+                    "message": "Server is online and responding (HTTP 200)"
+                }
+
+            if res.status_code == 401:
+                auth_header = res.headers.get("www-authenticate", "")
+                match = re.search(r'resource_metadata="([^"]+)"', auth_header)
+                meta_url = match.group(1) if match else None
+
+                parsed = urlparse(url)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+
+                # Fallback RFC 9728 well-known endpoints if not specified in WWW-Authenticate
+                if not meta_url:
+                    path_stripped = parsed.path.rstrip('/')
+                    candidates = [
+                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}/",
+                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}",
+                        f"{origin}/.well-known/oauth-protected-resource/",
+                        f"{origin}/.well-known/oauth-protected-resource",
+                    ]
+                    for candidate in candidates:
+                        try:
+                            c_res = requests.get(candidate, timeout=3)
+                            if c_res.status_code == 200 and "authorization_servers" in c_res.text:
+                                meta_url = candidate
+                                break
+                        except Exception:
+                            continue
+
+                resource_name = parsed.netloc
+                auth_servers: List[str] = []
+                scopes: List[str] = []
+                auth_endpoint: Optional[str] = None
+                token_endpoint: Optional[str] = None
+                device_endpoint: Optional[str] = None
+                registration_endpoint: Optional[str] = None
+
+                # Fetch RFC 9728 resource metadata document
+                if meta_url:
+                    try:
+                        m_res = requests.get(meta_url, timeout=5)
+                        if m_res.status_code == 200:
+                            m_data = m_res.json()
+                            resource_name = m_data.get("resource_name", resource_name)
+                            auth_servers = m_data.get("authorization_servers", [])
+                            scopes = m_data.get("scopes_supported", [])
+
+                            # Resolve authorization server via RFC 8414 metadata
+                            for as_url in auth_servers:
+                                as_base = str(as_url).rstrip('/')
+                                as_parsed = urlparse(as_base)
+                                as_origin = f"{as_parsed.scheme}://{as_parsed.netloc}"
+
+                                as_meta_candidates = [
+                                    f"{as_base}/.well-known/oauth-authorization-server",
+                                    f"{as_base}/.well-known/openid-configuration",
+                                    f"{as_origin}/.well-known/oauth-authorization-server",
+                                    f"{as_origin}/.well-known/openid-configuration"
+                                ]
+
+                                for as_meta_url in as_meta_candidates:
+                                    try:
+                                        as_res = requests.get(as_meta_url, timeout=3)
+                                        if as_res.status_code == 200:
+                                            as_json = as_res.json()
+                                            auth_endpoint = as_json.get("authorization_endpoint")
+                                            token_endpoint = as_json.get("token_endpoint")
+                                            device_endpoint = as_json.get("device_authorization_endpoint")
+                                            registration_endpoint = as_json.get("registration_endpoint")
+                                            if not scopes and as_json.get("scopes_supported"):
+                                                scopes = as_json.get("scopes_supported")
+                                            if auth_endpoint or device_endpoint:
+                                                break
+                                    except Exception:
+                                        pass
+
+                                if auth_endpoint or device_endpoint:
+                                    break
+
+                                # Standard fallback endpoints if metadata is not published (e.g. GitHub OAuth)
+                                if not auth_endpoint and not device_endpoint:
+                                    if "github" in as_base.lower():
+                                        device_endpoint = f"{as_origin}/login/device/code"
+                                        token_endpoint = f"{as_origin}/login/oauth/access_token"
+                                        auth_endpoint = f"{as_origin}/login/oauth/authorize"
+                                    else:
+                                        auth_endpoint = f"{as_base}/authorize"
+                                        token_endpoint = f"{as_base}/token"
+                    except Exception:
+                        pass
+
+                # Check if a valid token is already stored for this resource, host, or authorization server
+                active_token = (
+                    self.get_valid_token(url) or
+                    self.get_valid_token(parsed.netloc) or
+                    (self.get_valid_token(auth_servers[0]) if auth_servers else None)
+                )
+
+                has_token = bool(active_token)
+
+                # If token exists and was not already passed in headers, test it live
+                if has_token and "Authorization" not in req_headers:
+                    try:
+                        retry_headers = dict(req_headers)
+                        retry_headers["Authorization"] = f"Bearer {active_token}"
+                        retry_res = requests.get(url, headers=retry_headers, timeout=6)
+                        if retry_res.status_code in [200, 204, 307, 405]:
+                            return {
+                                "status": "online",
+                                "auth_required": False,
+                                "resource_name": resource_name,
+                                "has_token": True,
+                                "status_code": retry_res.status_code,
+                                "message": f"Authenticated & Online ({resource_name})"
+                            }
+                    except Exception:
+                        pass
+
+                return {
+                    "status": "auth_required",
+                    "auth_required": True,
+                    "resource_name": resource_name,
+                    "metadata_url": meta_url,
+                    "authorization_servers": auth_servers,
+                    "scopes": scopes,
+                    "auth_endpoint": auth_endpoint,
+                    "token_endpoint": token_endpoint,
+                    "device_authorization_endpoint": device_endpoint,
+                    "registration_endpoint": registration_endpoint,
+                    "has_token": has_token,
+                    "status_code": 401,
+                    "message": f"Requires authorization for {resource_name}"
+                }
+
+            if res.status_code in [307, 308, 405]:
+                return {
+                    "status": "online",
+                    "auth_required": False,
+                    "status_code": res.status_code,
+                    "message": "Endpoint is active and reachable"
+                }
+
+            return {
+                "status": "issue",
+                "auth_required": False,
+                "status_code": res.status_code,
+                "message": f"Server returned HTTP {res.status_code}: {res.reason}"
+            }
+        except Exception as e:
+            return {
+                "status": "issue",
+                "auth_required": False,
+                "error": str(e),
+                "message": f"Connection failed: {str(e)}"
+            }
+
+    # =========================================================================
+    # Dynamic Authorization Flow Handler
+    # =========================================================================
+    def authorize_mcp_endpoint(self, url: str, client_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Dynamically detects OAuth protected resource details via RFC 9728 .well-known
+        and starts the corresponding RFC 8628 Device Code or RFC 7636 PKCE flow.
+        """
+        probe = self.probe_endpoint(url)
+        if not probe.get("auth_required"):
+            return {"status": "success", "message": "No authorization required for this endpoint"}
+
+        resource_key = probe.get("resource_name") or urlparse(url).netloc
+        scopes = " ".join(probe.get("scopes", [])) or "read write"
+        token_endpoint = probe.get("token_endpoint")
+        device_endpoint = probe.get("device_authorization_endpoint")
+        auth_endpoint = probe.get("auth_endpoint")
+
+        # Resolve client_id: custom parameter, env var, or public client for the AS
+        resolved_client_id = client_id or os.environ.get("OAUTH_CLIENT_ID")
+        if not resolved_client_id:
+            auth_servers = probe.get("authorization_servers", [])
+            if any("github" in str(s).lower() for s in auth_servers) or "githubcopilot.com" in url:
+                resolved_client_id = "Iv1.b507a08c87ecfe98"  # Copilot / VS Code Device Auth Client
+            else:
+                resolved_client_id = "openagents-mcp-client"
+
+        # Case 1: RFC 8628 Device Authorization Grant
+        if device_endpoint and token_endpoint:
+            return self.start_device_code_flow(
+                device_url=device_endpoint,
+                token_url=token_endpoint,
+                client_id=resolved_client_id,
+                scopes=scopes,
+                resource_key=resource_key,
+                resource_url=url,
+            )
+
+        # Case 2: RFC 7636 Authorization Code with PKCE
+        if auth_endpoint and token_endpoint:
+            return self.start_generic_pkce_flow(
+                provider=resource_key,
+                client_id=resolved_client_id,
+                auth_url=auth_endpoint,
+                token_url=token_endpoint,
+                scopes=scopes,
+                redirect_port=8765,
+                resource_url=url,
+            )
+
+        return {
+            "status": "error",
+            "error": f"Authorization endpoints for {resource_key} could not be resolved from .well-known metadata.",
+            "probe": probe
+        }
+
+    # =========================================================================
+    # Generic RFC 8628 Device Code Authorization Flow
+    # =========================================================================
+    def start_device_code_flow(
+        self,
+        device_url: str,
+        token_url: str,
+        client_id: str,
+        scopes: str,
+        resource_key: str,
+        resource_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         flow_id = str(uuid.uuid4())
         try:
             resp = requests.post(
-                "https://github.com/login/device/code",
+                device_url,
                 data={
-                    "client_id": GITHUB_PUBLIC_CLIENT_ID,
-                    "scope": GITHUB_DEFAULT_SCOPES,
+                    "client_id": client_id,
+                    "scope": scopes,
                 },
                 headers={"Accept": "application/json", "User-Agent": "OpenAgents/1.0"},
                 timeout=15,
             )
             if resp.status_code != 200:
-                raise Exception(f"GitHub returned HTTP {resp.status_code}: {resp.text}")
+                raise Exception(f"Device code endpoint returned HTTP {resp.status_code}: {resp.text}")
 
             data = resp.json()
             device_code = data["device_code"]
             user_code = data["user_code"]
-            verification_uri = data.get("verification_uri", "https://github.com/login/device")
+            verification_uri = data.get("verification_uri_complete") or data.get("verification_uri")
             interval = max(int(data.get("interval", 5)), 5)
             expires_in = int(data.get("expires_in", 900))
 
-            # Copy user code to macOS clipboard if available
+            # Copy user code to system clipboard if available
             try:
                 subprocess.run(
                     ["pbcopy"],
@@ -271,7 +523,7 @@ class OAuthManager:
 
             flow_state = {
                 "flow_id": flow_id,
-                "provider": "github",
+                "provider": resource_key,
                 "status": "pending",
                 "user_code": user_code,
                 "verification_uri": verification_uri,
@@ -282,8 +534,8 @@ class OAuthManager:
 
             # Launch background poller thread
             threading.Thread(
-                target=self._poll_github_device_token,
-                args=(flow_id, device_code, interval, expires_in),
+                target=self._poll_device_token,
+                args=(flow_id, token_url, client_id, device_code, interval, expires_in, resource_key, resource_url),
                 daemon=True,
             ).start()
 
@@ -292,20 +544,30 @@ class OAuthManager:
         except Exception as e:
             return {
                 "flow_id": flow_id,
-                "provider": "github",
+                "provider": resource_key,
                 "status": "error",
                 "error": str(e),
             }
 
-    def _poll_github_device_token(self, flow_id: str, device_code: str, interval: int, expires_in: int):
+    def _poll_device_token(
+        self,
+        flow_id: str,
+        token_url: str,
+        client_id: str,
+        device_code: str,
+        interval: int,
+        expires_in: int,
+        resource_key: str,
+        resource_url: Optional[str] = None
+    ):
         deadline = time.time() + expires_in
         while time.time() < deadline:
             time.sleep(interval)
             try:
                 resp = requests.post(
-                    "https://github.com/login/oauth/access_token",
+                    token_url,
                     data={
-                        "client_id": GITHUB_PUBLIC_CLIENT_ID,
+                        "client_id": client_id,
                         "device_code": device_code,
                         "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                     },
@@ -318,23 +580,28 @@ class OAuthManager:
                 data = resp.json()
                 if "access_token" in data:
                     access_token = data["access_token"]
-                    # Fetch user info
-                    user_info = self._fetch_github_user_profile(access_token)
                     token_entry = {
                         "access_token": access_token,
+                        "refresh_token": data.get("refresh_token"),
                         "token_type": data.get("token_type", "bearer"),
-                        "scope": data.get("scope", GITHUB_DEFAULT_SCOPES),
-                        "user": user_info.get("login"),
-                        "name": user_info.get("name"),
-                        "avatar_url": user_info.get("avatar_url"),
-                        "expires_at": None,
+                        "scope": data.get("scope"),
+                        "token_endpoint": token_url,
+                        "client_id": client_id,
+                        "resource_name": resource_key,
+                        "expires_at": int(time.time()) + int(data["expires_in"]) if "expires_in" in data else None,
                     }
-                    self.save_provider_token("github", token_entry)
+
+                    # Save mapped to resource name and resource host/URL
+                    self.save_provider_token(resource_key, token_entry)
+                    if resource_url:
+                        parsed = urlparse(resource_url)
+                        self.save_provider_token(parsed.netloc, token_entry)
+                        self.save_provider_token(resource_url, token_entry)
+
                     if flow_id in self._active_flows:
                         self._active_flows[flow_id].update({
                             "status": "success",
-                            "user": user_info.get("login"),
-                            "name": user_info.get("name"),
+                            "message": "Authorization successful!",
                         })
                     return
 
@@ -350,118 +617,13 @@ class OAuthManager:
                         self._active_flows[flow_id]["error"] = data.get("error_description", err)
                     return
             except Exception as e:
-                print(f"[OAuthManager] GitHub device polling error: {e}")
+                print(f"[OAuthManager] Device polling error: {e}")
 
         if flow_id in self._active_flows:
             self._active_flows[flow_id]["status"] = "expired"
 
-    def _fetch_github_user_profile(self, access_token: str) -> Dict[str, Any]:
-        try:
-            res = requests.get(
-                "https://api.github.com/user",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "OpenAgents/1.0",
-                },
-                timeout=10,
-            )
-            if res.status_code == 200:
-                return res.json()
-        except Exception:
-            pass
-        return {}
-
     # =========================================================================
-    # Google OAuth 2.0 InstalledAppFlow / PKCE
-    # =========================================================================
-    def start_google_flow(self) -> Dict[str, Any]:
-        flow_id = str(uuid.uuid4())
-        flow_state = {
-            "flow_id": flow_id,
-            "provider": "google",
-            "status": "pending",
-            "message": "Opening browser for Google authorization...",
-        }
-        self._active_flows[flow_id] = flow_state
-
-        threading.Thread(
-            target=self._run_google_auth_worker,
-            args=(flow_id,),
-            daemon=True,
-        ).start()
-
-        return flow_state
-
-    def _run_google_auth_worker(self, flow_id: str):
-        try:
-            from google_auth_oauthlib.flow import InstalledAppFlow
-
-            if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
-                raise FileNotFoundError(
-                    f"Google credentials file not found at {GOOGLE_CREDENTIALS_FILE}. "
-                    "Place your Google client secrets in ~/.openagents/credentials/credentials.json"
-                )
-
-            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
-            flow = InstalledAppFlow.from_client_secrets_file(
-                GOOGLE_CREDENTIALS_FILE,
-                GOOGLE_SCOPES,
-            )
-
-            # run_local_server automatically binds an ephemeral port, opens the browser,
-            # catches the OAuth redirect, exchanges tokens, and shuts down the local server.
-            creds = flow.run_local_server(port=0, prompt="consent")
-
-            # Save to standard token.json for legacy tools
-            with open(GOOGLE_TOKEN_FILE, "w") as f:
-                f.write(creds.to_json())
-
-            # Fetch user email / profile
-            user_email = None
-            user_name = None
-            try:
-                user_res = requests.get(
-                    "https://www.googleapis.com/oauth2/v2/userinfo",
-                    headers={"Authorization": f"Bearer {creds.token}"},
-                    timeout=10,
-                )
-                if user_res.status_code == 200:
-                    u_data = user_res.json()
-                    user_email = u_data.get("email")
-                    user_name = u_data.get("name")
-            except Exception:
-                pass
-
-            token_entry = {
-                "access_token": creds.token,
-                "refresh_token": creds.refresh_token,
-                "token_type": "Bearer",
-                "expires_at": int(creds.expiry.timestamp()) if creds.expiry else None,
-                "scope": " ".join(creds.scopes or GOOGLE_SCOPES),
-                "email": user_email,
-                "user": user_email or user_name,
-                "name": user_name,
-            }
-            self.save_provider_token("google", token_entry)
-
-            if flow_id in self._active_flows:
-                self._active_flows[flow_id].update({
-                    "status": "success",
-                    "user": user_email or user_name,
-                    "email": user_email,
-                })
-
-        except Exception as e:
-            print(f"[OAuthManager] Google auth worker error: {e}")
-            if flow_id in self._active_flows:
-                self._active_flows[flow_id].update({
-                    "status": "error",
-                    "error": str(e),
-                })
-
-    # =========================================================================
-    # Generic PKCE Flow for any OAuth MCP Server (Slack, Linear, etc.)
+    # Generic RFC 7636 Authorization Code Flow with PKCE
     # =========================================================================
     def start_generic_pkce_flow(
         self,
@@ -471,6 +633,7 @@ class OAuthManager:
         token_url: str,
         scopes: str,
         redirect_port: int = 8765,
+        resource_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         flow_id = str(uuid.uuid4())
 
@@ -512,6 +675,7 @@ class OAuthManager:
                 redirect_uri,
                 redirect_port,
                 state,
+                resource_url,
             ),
             daemon=True,
         ).start()
@@ -533,12 +697,13 @@ class OAuthManager:
         redirect_uri: str,
         port: int,
         expected_state: str,
+        resource_url: Optional[str] = None,
     ):
         result_holder = {"code": None, "error": None}
 
         class OAuthCallbackHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
-                pass  # Silence default stderr logging
+                pass
 
             def do_GET(self):
                 parsed = urlparse(self.path)
@@ -596,7 +761,7 @@ class OAuthManager:
         server = None
         try:
             server = HTTPServer(("127.0.0.1", port), OAuthCallbackHandler)
-            server.timeout = 180  # 3 minutes timeout
+            server.timeout = 180
             while result_holder["code"] is None and result_holder["error"] is None:
                 server.handle_request()
         except Exception as e:
@@ -608,7 +773,7 @@ class OAuthManager:
                 except Exception:
                     pass
 
-        # Exchange authorization code for token
+        # Exchange authorization code for access token
         if result_holder["code"]:
             try:
                 resp = requests.post(
@@ -625,7 +790,18 @@ class OAuthManager:
                 )
                 if resp.status_code == 200:
                     token_data = resp.json()
-                    self.save_provider_token(provider, token_data)
+                    entry = {
+                        **token_data,
+                        "token_endpoint": token_url,
+                        "client_id": client_id,
+                        "resource_name": provider,
+                    }
+                    self.save_provider_token(provider, entry)
+                    if resource_url:
+                        parsed = urlparse(resource_url)
+                        self.save_provider_token(parsed.netloc, entry)
+                        self.save_provider_token(resource_url, entry)
+
                     if flow_id in self._active_flows:
                         self._active_flows[flow_id]["status"] = "success"
                 else:
@@ -643,196 +819,6 @@ class OAuthManager:
 
     def get_flow_status(self, flow_id: str) -> Optional[Dict[str, Any]]:
         return self._active_flows.get(flow_id)
-
-    # =========================================================================
-    # Environment Injection for MCP Servers
-    # =========================================================================
-    def get_env_for_mcp(self, server_name: str, url: Optional[str] = None) -> Dict[str, str]:
-        """
-        Automatically returns environment variables / headers needed for an MCP server
-        based on active OAuth connections.
-        """
-        env: Dict[str, str] = {}
-        s_lower = server_name.lower()
-        u_lower = (url or "").lower()
-
-        # GitHub (Copilot SSE or stdio)
-        if "github" in s_lower or "git" in s_lower or "copilot" in s_lower or "githubcopilot.com" in u_lower or "github.com" in u_lower:
-            gh_token = self.get_valid_token("github")
-            if gh_token:
-                env["GITHUB_PERSONAL_ACCESS_TOKEN"] = gh_token
-                env["GITHUB_TOKEN"] = gh_token
-                env["Authorization"] = f"Bearer {gh_token}"
-
-        # Google Drive / Gmail / Google Calendar
-        if "google" in s_lower or "drive" in s_lower or "gmail" in s_lower or "calendar" in s_lower:
-            if os.path.exists(GOOGLE_CREDENTIALS_FILE):
-                env["GOOGLE_DRIVE_OAUTH_CREDENTIALS"] = GOOGLE_CREDENTIALS_FILE
-                env["GOOGLE_OAUTH_CREDENTIALS"] = GOOGLE_CREDENTIALS_FILE
-            if os.path.exists(GOOGLE_TOKEN_FILE):
-                env["GMAIL_CREDENTIALS_PATH"] = GOOGLE_TOKEN_FILE
-                env["GOOGLE_DRIVE_MCP_TOKEN_PATH"] = GOOGLE_TOKEN_FILE
-                env["GOOGLE_CALENDAR_MCP_TOKEN_PATH"] = GOOGLE_TOKEN_FILE
-
-        # Slack
-        if "slack" in s_lower:
-            slack_token = self.get_valid_token("slack")
-            if slack_token:
-                env["SLACK_BOT_TOKEN"] = slack_token
-
-        return env
-
-    def probe_endpoint(self, url: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """
-        Inspects an SSE/HTTP MCP endpoint dynamically without hardcoded URLs.
-        If it returns 401 Unauthorized, parses WWW-Authenticate and RFC 9728 OAuth
-        protected resource metadata to identify the required authorization server.
-        """
-        import re
-        from urllib.parse import urlparse
-
-        if not url or not url.startswith(("http://", "https://")):
-            return {"status": "issue", "auth_required": False, "message": "Invalid or missing HTTP/HTTPS URL"}
-
-        req_headers = dict(headers or {})
-        if "Accept" not in req_headers:
-            req_headers["Accept"] = "text/event-stream, application/json, */*"
-
-        try:
-            res = requests.get(url, headers=req_headers, timeout=6)
-            if res.status_code in [200, 204]:
-                return {
-                    "status": "online",
-                    "auth_required": False,
-                    "status_code": res.status_code,
-                    "message": "Server is online and responding (HTTP 200)"
-                }
-
-            if res.status_code == 401:
-                auth_header = res.headers.get("www-authenticate", "")
-                match = re.search(r'resource_metadata="([^"]+)"', auth_header)
-                meta_url = match.group(1) if match else None
-
-                parsed = urlparse(url)
-                origin = f"{parsed.scheme}://{parsed.netloc}"
-
-                # Fallback RFC 9728 well-known endpoints if not specified in header
-                if not meta_url:
-                    path_stripped = parsed.path.rstrip('/')
-                    candidates = [
-                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}/",
-                        f"{origin}/.well-known/oauth-protected-resource{path_stripped}",
-                        f"{origin}/.well-known/oauth-protected-resource/",
-                        f"{origin}/.well-known/oauth-protected-resource",
-                    ]
-                    for candidate in candidates:
-                        try:
-                            c_res = requests.get(candidate, timeout=3)
-                            if c_res.status_code == 200 and "authorization_servers" in c_res.text:
-                                meta_url = candidate
-                                break
-                        except Exception:
-                            continue
-
-                provider = "custom"
-                resource_name = "Remote MCP Server"
-                auth_servers = []
-                scopes = []
-                auth_endpoint = None
-                token_endpoint = None
-
-                if meta_url:
-                    try:
-                        m_res = requests.get(meta_url, timeout=5)
-                        if m_res.status_code == 200:
-                            m_data = m_res.json()
-                            resource_name = m_data.get("resource_name", resource_name)
-                            auth_servers = m_data.get("authorization_servers", [])
-                            scopes = m_data.get("scopes_supported", [])
-
-                            if any("github" in str(s).lower() for s in auth_servers):
-                                provider = "github"
-                            elif auth_servers:
-                                provider = "custom"
-                                # Attempt RFC 8414 Authorization Server Metadata discovery
-                                as_base = str(auth_servers[0]).rstrip('/')
-                                for as_meta_url in [
-                                    f"{as_base}/.well-known/oauth-authorization-server",
-                                    f"{as_base}/.well-known/openid-configuration"
-                                ]:
-                                    try:
-                                        as_res = requests.get(as_meta_url, timeout=4)
-                                        if as_res.status_code == 200:
-                                            as_json = as_res.json()
-                                            auth_endpoint = as_json.get("authorization_endpoint")
-                                            token_endpoint = as_json.get("token_endpoint")
-                                            if auth_endpoint and token_endpoint:
-                                                break
-                                    except Exception:
-                                        pass
-                    except Exception:
-                        pass
-
-                has_token = bool(self.get_valid_token(provider)) if provider != "generic" else False
-
-                # If we have a token and didn't supply it yet, test if token authenticates successfully
-                if has_token and "Authorization" not in req_headers:
-                    active_token = self.get_valid_token(provider)
-                    if active_token:
-                        try:
-                            retry_headers = dict(req_headers)
-                            retry_headers["Authorization"] = f"Bearer {active_token}"
-                            retry_res = requests.get(url, headers=retry_headers, timeout=6)
-                            if retry_res.status_code in [200, 204, 307, 405]:
-                                return {
-                                    "status": "online",
-                                    "auth_required": False,
-                                    "provider": provider,
-                                    "resource_name": resource_name,
-                                    "has_token": True,
-                                    "status_code": retry_res.status_code,
-                                    "message": f"Authenticated with {provider.upper()} & Online"
-                                }
-                        except Exception:
-                            pass
-
-                return {
-                    "status": "auth_required",
-                    "auth_required": True,
-                    "provider": provider,
-                    "resource_name": resource_name,
-                    "metadata_url": meta_url,
-                    "authorization_servers": auth_servers,
-                    "scopes": scopes,
-                    "auth_endpoint": auth_endpoint,
-                    "token_endpoint": token_endpoint,
-                    "has_token": has_token,
-                    "status_code": 401,
-                    "message": f"Requires {provider.upper()} authorization for {resource_name}"
-                }
-
-            if res.status_code in [307, 308, 405]:
-                # Endpoint exists and responds (e.g. GET not allowed because POST is required for JSON-RPC)
-                return {
-                    "status": "online",
-                    "auth_required": False,
-                    "status_code": res.status_code,
-                    "message": "Endpoint is active and reachable"
-                }
-
-            return {
-                "status": "issue",
-                "auth_required": False,
-                "status_code": res.status_code,
-                "message": f"Server returned HTTP {res.status_code}: {res.reason}"
-            }
-        except Exception as e:
-            return {
-                "status": "issue",
-                "auth_required": False,
-                "error": str(e),
-                "message": f"Connection failed: {str(e)}"
-            }
 
 
 oauth_manager = OAuthManager()

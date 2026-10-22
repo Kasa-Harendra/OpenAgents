@@ -20,14 +20,10 @@ from backend.models.models import (
 router = APIRouter(prefix="/custom-agents")
 
 DEFAULT_MCP_PRESETS = [
-    {"name": "GitHub", "type": "stdio", "description": "Repository inspection, pull requests, issues, and git search"},
     {"name": "Filesystem", "type": "stdio", "description": "Local filesystem operations, file inspection, and editing"},
-    {"name": "PostgreSQL", "type": "stdio", "description": "Database query execution, schema inspection, and table analysis"},
     {"name": "Fetch / Web", "type": "stdio", "description": "Direct HTTP fetching, web content extraction, and conversion"},
     {"name": "SQLite", "type": "stdio", "description": "Local SQLite database querying and schema manipulation"},
-    {"name": "Memory", "type": "stdio", "description": "Knowledge graph and long-term memory persistence across sessions"},
-    {"name": "Slack", "type": "stdio", "description": "Slack messaging, channel monitoring, and thread management"},
-    {"name": "Brave Search", "type": "stdio", "description": "Web search and real-time internet data retrieval"}
+    {"name": "Memory", "type": "stdio", "description": "Knowledge graph and long-term memory persistence across sessions"}
 ]
 
 def get_installed_skills() -> List[Dict[str, Any]]:
