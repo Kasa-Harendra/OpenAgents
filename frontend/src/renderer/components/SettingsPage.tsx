@@ -23,7 +23,11 @@ import {
   Copy,
   RefreshCw,
   CheckCircle2,
-  Lock
+  Lock,
+  Code,
+  Zap,
+  Layers,
+  FileJson
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import axios from 'axios';
@@ -180,6 +184,19 @@ const SettingsPage: React.FC = () => {
     error?: string;
   } | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Raw JSON & Direct OAuth Panel State inside MCP Registration Modal
+  const [mcpModalTab, setMcpModalTab] = useState<'form' | 'json'>('form');
+  const [rawJsonInput, setRawJsonInput] = useState<string>('');
+  const [rawJsonError, setRawJsonError] = useState<string | null>(null);
+  const [jsonOAuthProvider, setJsonOAuthProvider] = useState<'github' | 'google' | 'slack' | 'custom'>('github');
+  const [customOAuthParams, setCustomOAuthParams] = useState({
+    client_id: '',
+    auth_url: '',
+    token_url: '',
+    scopes: 'read write',
+    redirect_port: 8765
+  });
 
   useEffect(() => {
     fetchConfigs();
@@ -597,44 +614,343 @@ const SettingsPage: React.FC = () => {
   };
 
   // MCP Server Registry Handlers
+  const generateJsonFromForm = (formState: typeof mcpForm) => {
+    const envObj: Record<string, string> = {};
+    for (const item of formState.env) {
+      if (item.key.trim()) {
+        envObj[item.key.trim()] = item.value;
+      }
+    }
+    const parsedArgs = formState.args.trim() ? formState.args.trim().split(/\s+/) : [];
+    const config: any = {
+      name: formState.name || 'my-mcp-server',
+      type: formState.type,
+    };
+    if (formState.type === 'stdio') {
+      config.command = formState.command || 'npx';
+      config.args = parsedArgs;
+    } else {
+      config.url = formState.url || 'http://localhost:3000/sse';
+    }
+    config.env = envObj;
+    return JSON.stringify(config, null, 2);
+  };
+
+  const syncRawJsonToForm = (jsonText: string): boolean => {
+    try {
+      setRawJsonError(null);
+      if (!jsonText.trim()) {
+        setRawJsonError('JSON configuration cannot be empty');
+        return false;
+      }
+      const parsed = JSON.parse(jsonText);
+      const keys = Object.keys(parsed);
+
+      let targetName = parsed.name || '';
+      let targetType: 'stdio' | 'sse' = (parsed.type?.toLowerCase() === 'sse') ? 'sse' : 'stdio';
+      let targetCommand = parsed.command || 'npx';
+      let targetArgs: string[] = parsed.args || [];
+      let targetUrl = parsed.url || '';
+      let targetEnv: Record<string, string> = parsed.env || {};
+
+      // Detect Claude Desktop config format: { "serverName": { "command": "...", "args": [...], "env": {...} } }
+      if (!parsed.name && keys.length === 1 && typeof parsed[keys[0]] === 'object' && parsed[keys[0]] !== null) {
+        targetName = keys[0];
+        const inner = parsed[keys[0]];
+        targetType = inner.url ? 'sse' : 'stdio';
+        targetCommand = inner.command || 'npx';
+        targetArgs = inner.args || [];
+        targetUrl = inner.url || '';
+        targetEnv = inner.env || {};
+      }
+
+      setMcpForm({
+        name: targetName,
+        type: targetType,
+        command: targetCommand,
+        args: Array.isArray(targetArgs) ? targetArgs.join(' ') : String(targetArgs || ''),
+        url: targetUrl,
+        env: Object.entries(targetEnv).map(([key, value]) => ({ key, value: String(value) }))
+      });
+
+      // Auto-detect OAuth provider
+      const candidate = parsed.oauth_provider || parsed.oauth?.provider;
+      if (candidate && ['github', 'google', 'slack', 'custom'].includes(candidate.toLowerCase())) {
+        setJsonOAuthProvider(candidate.toLowerCase() as any);
+      } else if (targetName.toLowerCase().includes('github')) {
+        setJsonOAuthProvider('github');
+      } else if (targetName.toLowerCase().includes('google') || targetName.toLowerCase().includes('drive') || targetName.toLowerCase().includes('gmail')) {
+        setJsonOAuthProvider('google');
+      } else if (targetName.toLowerCase().includes('slack')) {
+        setJsonOAuthProvider('slack');
+      }
+
+      return true;
+    } catch (err: any) {
+      setRawJsonError(err.message || 'Invalid JSON syntax');
+      return false;
+    }
+  };
+
+  const handleSwitchToTab = (tab: 'form' | 'json') => {
+    if (tab === 'json') {
+      setRawJsonInput(generateJsonFromForm(mcpForm));
+      setRawJsonError(null);
+    } else {
+      syncRawJsonToForm(rawJsonInput);
+    }
+    setMcpModalTab(tab);
+  };
+
+  const handleLoadRawJsonTemplate = (templateKey: 'github' | 'googledrive' | 'slack' | 'custom_sse' | 'claude_desktop') => {
+    let tpl = {};
+    if (templateKey === 'github') {
+      tpl = {
+        name: 'GitHub',
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-github'],
+        env: {
+          GITHUB_PERSONAL_ACCESS_TOKEN: ''
+        },
+        oauth_provider: 'github'
+      };
+      setJsonOAuthProvider('github');
+    } else if (templateKey === 'googledrive') {
+      tpl = {
+        name: 'Google Drive',
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@piotr-agier/google-drive-mcp'],
+        env: {},
+        oauth_provider: 'google'
+      };
+      setJsonOAuthProvider('google');
+    } else if (templateKey === 'slack') {
+      tpl = {
+        name: 'Slack',
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-slack'],
+        env: {
+          SLACK_BOT_TOKEN: '',
+          SLACK_TEAM_ID: ''
+        },
+        oauth_provider: 'slack'
+      };
+      setJsonOAuthProvider('slack');
+    } else if (templateKey === 'custom_sse') {
+      tpl = {
+        name: 'Remote Custom MCP',
+        type: 'sse',
+        url: 'https://mcp.mycompany.com/sse',
+        env: {
+          AUTHORIZATION_TOKEN: ''
+        },
+        oauth: {
+          provider: 'custom',
+          client_id: 'client_123',
+          auth_url: 'https://auth.mycompany.com/authorize',
+          token_url: 'https://auth.mycompany.com/token',
+          scopes: 'read write'
+        }
+      };
+      setJsonOAuthProvider('custom');
+      setCustomOAuthParams({
+        client_id: 'client_123',
+        auth_url: 'https://auth.mycompany.com/authorize',
+        token_url: 'https://auth.mycompany.com/token',
+        scopes: 'read write',
+        redirect_port: 8765
+      });
+    } else if (templateKey === 'claude_desktop') {
+      tpl = {
+        filesystem: {
+          command: 'npx',
+          args: ['-y', '@modelcontextprotocol/server-filesystem', './workspace'],
+          env: {}
+        }
+      };
+    }
+    const formatted = JSON.stringify(tpl, null, 2);
+    setRawJsonInput(formatted);
+    setRawJsonError(null);
+    syncRawJsonToForm(formatted);
+  };
+
+  const handleFormatRawJson = () => {
+    try {
+      const parsed = JSON.parse(rawJsonInput);
+      setRawJsonInput(JSON.stringify(parsed, null, 2));
+      setRawJsonError(null);
+      toast.success('JSON formatted');
+    } catch (e: any) {
+      setRawJsonError(e.message);
+      toast.error('Cannot format invalid JSON');
+    }
+  };
+
+  const handleTriggerAuthFromRawJson = async () => {
+    let providerToUse = jsonOAuthProvider;
+    let customParams = { ...customOAuthParams };
+
+    try {
+      if (rawJsonInput.trim()) {
+        const parsed = JSON.parse(rawJsonInput);
+        const candidate = parsed.oauth_provider || parsed.oauth?.provider;
+        if (candidate && ['github', 'google', 'slack', 'custom'].includes(candidate.toLowerCase())) {
+          providerToUse = candidate.toLowerCase() as any;
+          setJsonOAuthProvider(providerToUse);
+        }
+        if (parsed.oauth?.client_id && parsed.oauth?.auth_url && parsed.oauth?.token_url) {
+          providerToUse = 'custom';
+          setJsonOAuthProvider('custom');
+          customParams = {
+            client_id: parsed.oauth.client_id,
+            auth_url: parsed.oauth.auth_url,
+            token_url: parsed.oauth.token_url,
+            scopes: parsed.oauth.scopes || 'read write',
+            redirect_port: parsed.oauth.redirect_port || 8765
+          };
+          setCustomOAuthParams(customParams);
+        }
+      }
+    } catch (_) {}
+
+    try {
+      setCopiedCode(false);
+      setOauthModal({
+        isOpen: true,
+        provider: providerToUse,
+        status: 'pending',
+        message: `Initiating ${providerToUse.toUpperCase()} authorization...`
+      });
+
+      let res;
+      if (providerToUse === 'custom') {
+        if (!customParams.client_id || !customParams.auth_url || !customParams.token_url) {
+          toast.error('Client ID, Auth URL, and Token URL are required for custom OAuth');
+          setOauthModal(null);
+          return;
+        }
+        res = await axios.post(`${BASE_URL}/oauth/authorize/custom`, customParams);
+      } else {
+        res = await axios.post(`${BASE_URL}/oauth/authorize/${providerToUse}`);
+      }
+
+      const data = res.data;
+      setOauthModal({
+        isOpen: true,
+        provider: providerToUse,
+        flowId: data.flow_id,
+        userCode: data.user_code,
+        verificationUri: data.verification_uri,
+        status: 'pending',
+        message: data.message || 'Waiting for browser approval...'
+      });
+
+      if (data.flow_id) {
+        const flowId = data.flow_id;
+        const intervalId = setInterval(async () => {
+          try {
+            const check = await axios.get(`${BASE_URL}/oauth/flows/${flowId}`);
+            if (check.data.status === 'success') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'success', message: 'Authentication Successful!' } : null);
+              toast.success(`Authorized ${providerToUse.toUpperCase()} successfully!`);
+
+              // Auto-inject tokens into rawJsonInput and form
+              try {
+                const envRes = await axios.get(`${BASE_URL}/oauth/env/${providerToUse}`);
+                const injectedEnv = envRes.data || {};
+
+                try {
+                  const currentObj = JSON.parse(rawJsonInput || '{}');
+                  currentObj.env = { ...(currentObj.env || {}), ...injectedEnv };
+                  const updatedStr = JSON.stringify(currentObj, null, 2);
+                  setRawJsonInput(updatedStr);
+                  syncRawJsonToForm(updatedStr);
+                } catch (_) {}
+              } catch (_) {}
+
+              setTimeout(() => {
+                setOauthModal(null);
+              }, 1600);
+              fetchOAuthProviders();
+              fetchMcpPresets();
+            } else if (check.data.status === 'error' || check.data.status === 'expired') {
+              clearInterval(intervalId);
+              setOauthModal(prev => prev ? { ...prev, status: 'error', error: check.data.error || 'Authorization failed' } : null);
+            }
+          } catch (e) {
+            // Keep polling
+          }
+        }, 2200);
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || 'Authorization failed';
+      setOauthModal(prev => prev ? { ...prev, status: 'error', error: msg } : null);
+      toast.error(`Authorization error: ${msg}`);
+    }
+  };
+
   const handleOpenCreateMcpModal = (preset?: MCPPreset) => {
     setEditingMcpId(null);
+    setMcpModalTab('form');
+    setRawJsonError(null);
+    let initialForm = {
+      name: '',
+      type: 'stdio' as 'stdio' | 'sse',
+      command: 'npx',
+      args: '',
+      url: '',
+      env: [] as { key: string; value: string }[]
+    };
     if (preset) {
-      setMcpForm({
+      initialForm = {
         name: preset.name,
         type: (preset.type as 'stdio' | 'sse') || 'stdio',
         command: preset.command || 'npx',
         args: (preset.args || []).join(' '),
         url: preset.url || '',
         env: Object.entries(preset.env || {}).map(([key, value]) => ({ key, value }))
-      });
-    } else {
-      setMcpForm({
-        name: '',
-        type: 'stdio',
-        command: 'npx',
-        args: '',
-        url: '',
-        env: []
-      });
+      };
+      if (preset.oauth_provider) {
+        setJsonOAuthProvider((preset.oauth_provider as any) || 'github');
+      }
     }
+    setMcpForm(initialForm);
+    setRawJsonInput(generateJsonFromForm(initialForm));
     setIsMcpModalOpen(true);
   };
 
   const handleOpenEditMcpModal = (server: RegisteredMCPServer) => {
     setEditingMcpId(server.id);
-    setMcpForm({
+    setMcpModalTab('form');
+    setRawJsonError(null);
+    const initialForm = {
       name: server.name,
       type: (server.type as 'stdio' | 'sse') || 'stdio',
       command: server.command || '',
       args: (server.args || []).join(' '),
       url: server.url || '',
       env: Object.entries(server.env || {}).map(([key, value]) => ({ key, value }))
-    });
+    };
+    setMcpForm(initialForm);
+    setRawJsonInput(generateJsonFromForm(initialForm));
     setIsMcpModalOpen(true);
   };
 
   const handleSaveMcpServer = async () => {
+    // If user is currently editing on JSON tab, validate & sync first
+    if (mcpModalTab === 'json') {
+      const ok = syncRawJsonToForm(rawJsonInput);
+      if (!ok) {
+        toast.error('Cannot save: Invalid JSON in Raw JSON panel');
+        return;
+      }
+    }
+
     const nameClean = mcpForm.name.trim();
     if (!nameClean) {
       toast.error('Server name is required');
@@ -1874,7 +2190,7 @@ const SettingsPage: React.FC = () => {
       {/* Register / Edit MCP Server Modal */}
       {isMcpModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-card border border-border w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+          <div className="bg-card border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-scale-in">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0 bg-muted/20">
               <div className="flex items-center gap-2.5">
@@ -1900,155 +2216,379 @@ const SettingsPage: React.FC = () => {
               </button>
             </div>
 
+            {/* Modal Sub-Tabs: Visual Form vs Raw JSON */}
+            <div className="flex border-b border-border bg-muted/30 px-6 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSwitchToTab('form')}
+                className={cn(
+                  "py-2.5 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5",
+                  mcpModalTab === 'form'
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Layers size={13} />
+                Visual Form Builder
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchToTab('json')}
+                className={cn(
+                  "py-2.5 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5",
+                  mcpModalTab === 'json'
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Code size={13} />
+                Raw JSON & Direct OAuth Hub
+              </button>
+            </div>
+
             {/* Modal Body */}
-            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
-              {/* Name & Type */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground flex items-center gap-1">
-                    Server Name <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={mcpForm.name}
-                    onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
-                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
-                    placeholder="e.g. GitHub, Filesystem, Postgres"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground">
-                    Protocol Transport
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMcpForm({ ...mcpForm, type: 'stdio' })}
-                      className={cn(
-                        "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
-                        mcpForm.type === 'stdio'
-                          ? "bg-blue-500/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-semibold"
-                          : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Terminal size={13} />
-                      stdio
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMcpForm({ ...mcpForm, type: 'sse' })}
-                      className={cn(
-                        "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
-                        mcpForm.type === 'sse'
-                          ? "bg-purple-500/10 border-purple-500/40 text-purple-600 dark:text-purple-400 font-semibold"
-                          : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      <Globe size={13} />
-                      SSE / HTTP
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* stdio options: command & arguments */}
-              {mcpForm.type === 'stdio' ? (
-                <div className="space-y-3 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+            {mcpModalTab === 'form' ? (
+              <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                {/* Name & Type */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-foreground flex items-center gap-1">
-                      Command <span className="text-destructive">*</span>
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                      Server Name <span className="text-destructive">*</span>
                     </label>
                     <input
                       type="text"
-                      value={mcpForm.command}
-                      onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
-                      placeholder="e.g. npx, uvx, python, node, docker"
+                      value={mcpForm.name}
+                      onChange={(e) => setMcpForm({ ...mcpForm, name: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary outline-none transition-all"
+                      placeholder="e.g. GitHub, Filesystem, Postgres"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-foreground">
-                      Command Arguments (space-separated)
+                    <label className="text-xs font-semibold text-foreground">
+                      Protocol Transport
                     </label>
-                    <input
-                      type="text"
-                      value={mcpForm.args}
-                      onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
-                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
-                      placeholder="e.g. -y @modelcontextprotocol/server-github"
-                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMcpForm({ ...mcpForm, type: 'stdio' })}
+                        className={cn(
+                          "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
+                          mcpForm.type === 'stdio'
+                            ? "bg-blue-500/10 border-blue-500/40 text-blue-600 dark:text-blue-400 font-semibold"
+                            : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Terminal size={13} />
+                        stdio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMcpForm({ ...mcpForm, type: 'sse' })}
+                        className={cn(
+                          "py-2 px-3 text-xs font-medium rounded-lg border transition-all text-center flex items-center justify-center gap-1.5",
+                          mcpForm.type === 'sse'
+                            ? "bg-purple-500/10 border-purple-500/40 text-purple-600 dark:text-purple-400 font-semibold"
+                            : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Globe size={13} />
+                        SSE / HTTP
+                      </button>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-1.5 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
-                  <label className="text-xs font-medium text-foreground flex items-center gap-1">
-                    Server SSE URL <span className="text-destructive">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={mcpForm.url}
-                    onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
-                    className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
-                    placeholder="e.g. http://localhost:3000/sse"
-                  />
-                </div>
-              )}
 
-              {/* Environment Variables */}
-              <div className="space-y-2 pt-2 border-t border-border/50">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <Key size={13} className="text-amber-500" />
-                    Environment Variables (API Keys & Tokens)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddEnvRow}
-                    className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
-                  >
-                    <Plus size={12} />
-                    Add Variable
-                  </button>
-                </div>
+                {/* stdio options: command & arguments */}
+                {mcpForm.type === 'stdio' ? (
+                  <div className="space-y-3 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1">
+                        Command <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={mcpForm.command}
+                        onChange={(e) => setMcpForm({ ...mcpForm, command: e.target.value })}
+                        className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                        placeholder="e.g. npx, uvx, python, node, docker"
+                      />
+                    </div>
 
-                {mcpForm.env.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic bg-muted/20 p-2.5 rounded-lg border border-border/30">
-                    No environment variables configured.
-                  </p>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground">
+                        Command Arguments (space-separated)
+                      </label>
+                      <input
+                        type="text"
+                        value={mcpForm.args}
+                        onChange={(e) => setMcpForm({ ...mcpForm, args: e.target.value })}
+                        className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                        placeholder="e.g. -y @modelcontextprotocol/server-github"
+                      />
+                    </div>
+                  </div>
                 ) : (
-                  <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                    {mcpForm.env.map((row, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={row.key}
-                          onChange={(e) => handleUpdateEnvRow(idx, 'key', e.target.value)}
-                          placeholder="VARIABLE_NAME"
-                          className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary uppercase"
-                        />
-                        <input
-                          type="password"
-                          value={row.value}
-                          onChange={(e) => handleUpdateEnvRow(idx, 'value', e.target.value)}
-                          placeholder="value / secret token"
-                          className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveEnvRow(idx)}
-                          className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-colors"
-                          title="Remove variable"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="space-y-1.5 p-3.5 bg-muted/20 border border-border/50 rounded-xl">
+                    <label className="text-xs font-medium text-foreground flex items-center gap-1">
+                      Server SSE URL <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={mcpForm.url}
+                      onChange={(e) => setMcpForm({ ...mcpForm, url: e.target.value })}
+                      className="w-full bg-background border border-input rounded-lg px-3 py-2 text-xs font-mono focus:ring-1 focus:ring-primary outline-none"
+                      placeholder="e.g. http://localhost:3000/sse"
+                    />
                   </div>
                 )}
+
+                {/* Environment Variables */}
+                <div className="space-y-2 pt-2 border-t border-border/50">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Key size={13} className="text-amber-500" />
+                      Environment Variables (API Keys & Tokens)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddEnvRow}
+                      className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
+                    >
+                      <Plus size={12} />
+                      Add Variable
+                    </button>
+                  </div>
+
+                  {mcpForm.env.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic bg-muted/20 p-2.5 rounded-lg border border-border/30">
+                      No environment variables configured.
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      {mcpForm.env.map((row, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={row.key}
+                            onChange={(e) => handleUpdateEnvRow(idx, 'key', e.target.value)}
+                            placeholder="VARIABLE_NAME"
+                            className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary uppercase"
+                          />
+                          <input
+                            type="password"
+                            value={row.value}
+                            onChange={(e) => handleUpdateEnvRow(idx, 'value', e.target.value)}
+                            placeholder="value / secret token"
+                            className="w-1/2 bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEnvRow(idx)}
+                            className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded transition-colors"
+                            title="Remove variable"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              /* Raw JSON & Direct OAuth Hub Panel */
+              <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                {/* Templates toolbar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <FileJson size={14} className="text-primary" />
+                      Paste / Dump Raw MCP Configuration JSON
+                    </label>
+                    <div className="flex items-center gap-1 text-[11px]">
+                      {rawJsonError ? (
+                        <span className="text-destructive font-medium flex items-center gap-1">
+                          <AlertCircle size={12} />
+                          Invalid JSON
+                        </span>
+                      ) : (
+                        <span className="text-emerald-500 font-medium flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          Valid JSON
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mr-1">
+                      Quick Templates:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadRawJsonTemplate('github')}
+                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
+                    >
+                      + GitHub
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadRawJsonTemplate('googledrive')}
+                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
+                    >
+                      + Google Drive
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadRawJsonTemplate('slack')}
+                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
+                    >
+                      + Slack
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadRawJsonTemplate('custom_sse')}
+                      className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 text-[11px] font-mono border border-purple-500/20 transition-colors"
+                    >
+                      + Remote SSE w/ OAuth
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadRawJsonTemplate('claude_desktop')}
+                      className="px-2 py-0.5 rounded bg-muted/60 hover:bg-muted text-[11px] font-mono border border-border/60 transition-colors"
+                    >
+                      + Claude Desktop Format
+                    </button>
+                  </div>
+                </div>
+
+                {/* Monospaced Editor */}
+                <div className="space-y-1.5">
+                  <textarea
+                    value={rawJsonInput}
+                    onChange={(e) => {
+                      setRawJsonInput(e.target.value);
+                      syncRawJsonToForm(e.target.value);
+                    }}
+                    rows={10}
+                    className="w-full bg-background border border-input rounded-xl p-3.5 text-xs font-mono outline-none focus:ring-2 focus:ring-primary leading-relaxed resize-y custom-scrollbar"
+                    placeholder={`{\n  "name": "My-MCP-Server",\n  "type": "stdio",\n  "command": "npx",\n  "args": ["-y", "@modelcontextprotocol/server-xyz"],\n  "env": {}\n}`}
+                  />
+                  {rawJsonError && (
+                    <p className="text-[11px] text-destructive bg-destructive/10 p-2 rounded-lg border border-destructive/20 font-mono">
+                      {rawJsonError}
+                    </p>
+                  )}
+                </div>
+
+                {/* Editor action buttons */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleFormatRawJson}
+                      className="px-2.5 py-1 text-xs bg-muted/60 hover:bg-muted border border-border rounded-lg text-muted-foreground hover:text-foreground transition-all flex items-center gap-1"
+                    >
+                      Format JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ok = syncRawJsonToForm(rawJsonInput);
+                        if (ok) {
+                          toast.success('Synced to visual form builder');
+                          setMcpModalTab('form');
+                        }
+                      }}
+                      className="px-2.5 py-1 text-xs bg-muted/60 hover:bg-muted border border-border rounded-lg text-muted-foreground hover:text-foreground transition-all flex items-center gap-1"
+                    >
+                      Sync to Form View
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dedicated Manual OAuth Trigger Hub */}
+                <div className="p-4 rounded-xl bg-gradient-to-br from-card to-muted/20 border border-primary/25 space-y-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <Zap size={14} className="text-amber-500 fill-amber-500" />
+                        <span>Manually Trigger OAuth Authorization</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Trigger the authentication flow directly. Captured tokens will automatically be injected into the JSON <code className="font-mono text-[10px] bg-muted px-1.5 py-0.5 rounded text-foreground/80">env</code> block.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-foreground">Select OAuth Provider</label>
+                      <select
+                        value={jsonOAuthProvider}
+                        onChange={(e) => setJsonOAuthProvider(e.target.value as any)}
+                        className="w-full bg-background border border-input rounded-lg px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="github">GitHub (Zero-Config Device Flow)</option>
+                        <option value="google">Google Workspace (InstalledAppFlow)</option>
+                        <option value="slack">Slack (OAuth PKCE)</option>
+                        <option value="custom">Custom Remote MCP Endpoints (PKCE)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={handleTriggerAuthFromRawJson}
+                        className="w-full py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-semibold text-xs rounded-lg transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5"
+                      >
+                        <Zap size={13} className="fill-slate-950" />
+                        <span>Authorize & Inject Tokens</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {jsonOAuthProvider === 'custom' && (
+                    <div className="p-3 bg-background/80 rounded-lg border border-border/80 space-y-2 mt-2">
+                      <span className="text-[10px] font-semibold uppercase text-muted-foreground block">
+                        Custom OAuth PKCE Parameters
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={customOAuthParams.client_id}
+                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, client_id: e.target.value })}
+                          placeholder="Client ID *"
+                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={customOAuthParams.scopes}
+                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, scopes: e.target.value })}
+                          placeholder="Scopes (e.g. read write)"
+                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={customOAuthParams.auth_url}
+                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, auth_url: e.target.value })}
+                          placeholder="Authorization URL *"
+                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none col-span-2"
+                        />
+                        <input
+                          type="text"
+                          value={customOAuthParams.token_url}
+                          onChange={(e) => setCustomOAuthParams({ ...customOAuthParams, token_url: e.target.value })}
+                          placeholder="Token URL *"
+                          className="bg-muted/40 border border-input rounded px-2 py-1 text-xs font-mono outline-none col-span-2"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-border bg-muted/20 flex items-center justify-end gap-2 shrink-0">
